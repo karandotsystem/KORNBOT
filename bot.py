@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - DATABASE SYNC FIXED
+📹 TOKEN VIDEO BOT - USER ID FIXED
 """
 
 import os
@@ -181,6 +181,7 @@ class Database:
                 self.conn.commit()
                 return False, f"❌ Device limit reached ({device_limit})", 0
             
+            # Check if user already has active token
             cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
             user_result = cursor.fetchone()
             if user_result:
@@ -211,7 +212,6 @@ class Database:
     
     def check_user_active(self, user_id):
         try:
-            # Direct query to check is_active and expiry
             cursor = self.conn.cursor()
             cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
             result = cursor.fetchone()
@@ -224,14 +224,12 @@ class Database:
             
             is_active, expires_at = result
             
-            # is_active should be 1 or True
             if is_active != 1:
                 return False
             
             if not expires_at:
                 return False
             
-            # Check if token is still valid
             is_valid = datetime.now() < expires_at
             print(f"🔍 Token valid: {is_valid}, expires: {expires_at}")
             return is_valid
@@ -333,13 +331,15 @@ def start(message):
             expires = info[2]
             remaining = expires - datetime.now() if expires else None
             time_str = f"{int(remaining.total_seconds() // 3600)}h {int((remaining.total_seconds() % 3600) // 60)}m" if remaining and remaining.total_seconds() > 0 else "Expiring soon"
+        else:
+            time_str = "Unknown"
         
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("📹 Latest Videos", callback_data="user_videos"),
             types.InlineKeyboardButton("📊 My Token", callback_data="user_token")
         )
-        bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str if info else 'Unknown'}\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
+        bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str}\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
     else:
         markup = types.InlineKeyboardMarkup(row_width=1)
         link = db.get_setting('free_token_link') or 'https://t.me/latestvideo10'
@@ -548,7 +548,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - SYNC FIXED                           ║
+    ║   📹 TOKEN VIDEO BOT - USER ID FIXED                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
