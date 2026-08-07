@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - TRANSACTION FIXED
+📹 TOKEN VIDEO BOT - REDEEM FIXED
 """
 
 import os
@@ -45,7 +45,7 @@ class Database:
                 database=DB_NAME,
                 timeout=30
             )
-            self.conn.autocommit = True  # IMPORTANT: Auto-commit mode
+            self.conn.autocommit = True
             print("✅ Database connected successfully!")
             self.init_tables()
         except Exception as e:
@@ -112,7 +112,6 @@ class Database:
             print(f"❌ Table creation error: {e}")
     
     def execute_query(self, query, params=None):
-        """Execute query with proper transaction handling"""
         cursor = self.conn.cursor()
         try:
             if params:
@@ -151,6 +150,7 @@ class Database:
                 INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
                 VALUES (%s, %s, %s, %s, NOW(), %s, 1)
             ''', (token, created_by, device_limit, hours, expiry))
+            print(f"✅ Token stored in DB: {token}")
         except Exception as e:
             print(f"❌ create_token error: {e}")
     
@@ -159,8 +159,11 @@ class Database:
         try:
             cursor = self.conn.cursor()
             
+            # Check if token exists in database
             cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
             result = cursor.fetchone()
+            
+            print(f"🔍 Redeem check: Token={token}, Result={result}")
             
             if not result:
                 self.conn.commit()
@@ -181,6 +184,7 @@ class Database:
                 self.conn.commit()
                 return False, f"❌ Device limit reached ({device_limit})", 0
             
+            # Check if user already has active token
             cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
             user_result = cursor.fetchone()
             if user_result:
@@ -190,6 +194,7 @@ class Database:
                         self.conn.commit()
                         return False, "❌ You already have an active token", 0
             
+            # Update token usage
             cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
             cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
             
@@ -201,6 +206,7 @@ class Database:
             ''', (token, expiry, device_id, user_id))
             
             self.conn.commit()
+            print(f"✅ Token redeemed: {token} by user {user_id}")
             return True, f"✅ Token redeemed! {hours} hours added.", hours
             
         except Exception as e:
@@ -504,7 +510,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - TRANSACTION FIXED                    ║
+    ║   📹 TOKEN VIDEO BOT - REDEEM FIXED                         ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
