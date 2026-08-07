@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - USER ID FIXED
+📹 TOKEN VIDEO BOT - USER ID FIXED FINAL
 """
 
 import os
@@ -181,7 +181,6 @@ class Database:
                 self.conn.commit()
                 return False, f"❌ Device limit reached ({device_limit})", 0
             
-            # Check if user already has active token
             cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
             user_result = cursor.fetchone()
             if user_result:
@@ -217,8 +216,6 @@ class Database:
             result = cursor.fetchone()
             self.conn.commit()
             
-            print(f"🔍 DB check: user_id={user_id}, result={result}")
-            
             if not result:
                 return False
             
@@ -230,9 +227,7 @@ class Database:
             if not expires_at:
                 return False
             
-            is_valid = datetime.now() < expires_at
-            print(f"🔍 Token valid: {is_valid}, expires: {expires_at}")
-            return is_valid
+            return datetime.now() < expires_at
             
         except Exception as e:
             print(f"❌ check_user_active error: {e}")
@@ -322,7 +317,6 @@ def start(message):
         return
     
     is_active = db.check_user_active(user_id)
-    print(f"🔍 User {user_id} active: {is_active}")
     
     if is_active:
         info = db.get_user_token(user_id)
@@ -458,7 +452,6 @@ def get_videos(message):
     user_id = message.from_user.id
     
     is_active = db.check_user_active(user_id)
-    print(f"🔍 Videos command - User {user_id} active: {is_active}")
     
     if not is_active:
         bot.reply_to(message, "❌ No active token. Use /redeem [TOKEN]")
@@ -548,7 +541,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - USER ID FIXED                        ║
+    ║   📹 TOKEN VIDEO BOT - FINAL FIXED                         ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
