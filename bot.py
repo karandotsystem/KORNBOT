@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FINAL pg8000 VERSION
+📹 TOKEN VIDEO BOT - TRANSACTION FIXED
 """
 
 import os
@@ -45,6 +45,7 @@ class Database:
                 database=DB_NAME,
                 timeout=30
             )
+            self.conn.autocommit = True  # IMPORTANT: Auto-commit mode
             print("✅ Database connected successfully!")
             self.init_tables()
         except Exception as e:
@@ -54,148 +55,196 @@ class Database:
     
     def init_tables(self):
         cursor = self.conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                token TEXT,
-                token_activated_at TIMESTAMP,
-                token_expires_at TIMESTAMP,
-                device_id TEXT,
-                is_active INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tokens (
-                token TEXT PRIMARY KEY,
-                created_by BIGINT,
-                device_limit INTEGER,
-                hours INTEGER,
-                used_count INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW(),
-                expiry_time TIMESTAMP,
-                is_active INTEGER DEFAULT 1
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS token_usage (
-                id SERIAL PRIMARY KEY,
-                token TEXT,
-                user_id BIGINT,
-                device_id TEXT,
-                used_at TIMESTAMP DEFAULT NOW()
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS videos_cache (
-                id SERIAL PRIMARY KEY,
-                title TEXT,
-                link TEXT,
-                fetched_at TIMESTAMP DEFAULT NOW()
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        ''')
-        cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
-        self.conn.commit()
-        print("✅ Tables ready!")
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    token TEXT,
+                    token_activated_at TIMESTAMP,
+                    token_expires_at TIMESTAMP,
+                    device_id TEXT,
+                    is_active INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tokens (
+                    token TEXT PRIMARY KEY,
+                    created_by BIGINT,
+                    device_limit INTEGER,
+                    hours INTEGER,
+                    used_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    expiry_time TIMESTAMP,
+                    is_active INTEGER DEFAULT 1
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS token_usage (
+                    id SERIAL PRIMARY KEY,
+                    token TEXT,
+                    user_id BIGINT,
+                    device_id TEXT,
+                    used_at TIMESTAMP DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS videos_cache (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT,
+                    link TEXT,
+                    fetched_at TIMESTAMP DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            ''')
+            cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
+            self.conn.commit()
+            print("✅ Tables ready!")
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Table creation error: {e}")
+    
+    def execute_query(self, query, params=None):
+        """Execute query with proper transaction handling"""
+        cursor = self.conn.cursor()
+        try:
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            self.conn.commit()
+            return cursor
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ Query error: {e}")
+            raise e
+    
+    def fetch_one(self, query, params=None):
+        cursor = self.execute_query(query, params)
+        return cursor.fetchone()
+    
+    def fetch_all(self, query, params=None):
+        cursor = self.execute_query(query, params)
+        return cursor.fetchall()
     
     def create_user(self, user_id, username, first_name):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            INSERT INTO users (user_id, username, first_name, created_at)
-            VALUES (%s, %s, %s, NOW())
-            ON CONFLICT (user_id) DO NOTHING
-        ''', (user_id, username, first_name))
-        self.conn.commit()
+        try:
+            self.execute_query('''
+                INSERT INTO users (user_id, username, first_name, created_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            ''', (user_id, username, first_name))
+        except Exception as e:
+            print(f"❌ create_user error: {e}")
     
     def create_token(self, token, created_by, hours, device_limit):
-        cursor = self.conn.cursor()
-        expiry = datetime.now() + timedelta(hours=hours)
-        cursor.execute('''
-            INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
-            VALUES (%s, %s, %s, %s, NOW(), %s, 1)
-        ''', (token, created_by, device_limit, hours, expiry))
-        self.conn.commit()
+        try:
+            expiry = datetime.now() + timedelta(hours=hours)
+            self.execute_query('''
+                INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
+                VALUES (%s, %s, %s, %s, NOW(), %s, 1)
+            ''', (token, created_by, device_limit, hours, expiry))
+        except Exception as e:
+            print(f"❌ create_token error: {e}")
     
     def redeem_token(self, token, user_id, device_id):
         token = token.upper().strip()
-        cursor = self.conn.cursor()
-        
-        cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
-        result = cursor.fetchone()
-        
-        if not result:
-            return False, "❌ Invalid token", 0
-        
-        token_val, device_limit, used_count, hours, expiry_time, is_active = result
-        
-        if not is_active:
-            return False, "❌ Token expired", 0
-        
-        if datetime.now() > expiry_time:
-            cursor.execute('UPDATE tokens SET is_active = 0 WHERE token = %s', (token,))
+        try:
+            cursor = self.conn.cursor()
+            
+            cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
+            result = cursor.fetchone()
+            
+            if not result:
+                self.conn.commit()
+                return False, "❌ Invalid token", 0
+            
+            token_val, device_limit, used_count, hours, expiry_time, is_active = result
+            
+            if not is_active:
+                self.conn.commit()
+                return False, "❌ Token expired", 0
+            
+            if datetime.now() > expiry_time:
+                cursor.execute('UPDATE tokens SET is_active = 0 WHERE token = %s', (token,))
+                self.conn.commit()
+                return False, "❌ Token expired", 0
+            
+            if used_count >= device_limit:
+                self.conn.commit()
+                return False, f"❌ Device limit reached ({device_limit})", 0
+            
+            cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
+            user_result = cursor.fetchone()
+            if user_result:
+                is_active_user, expires_at = user_result
+                if is_active_user and expires_at:
+                    if datetime.now() < expires_at:
+                        self.conn.commit()
+                        return False, "❌ You already have an active token", 0
+            
+            cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
+            cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
+            
+            expiry = datetime.now() + timedelta(hours=hours)
+            cursor.execute('''
+                UPDATE users 
+                SET token = %s, token_activated_at = NOW(), token_expires_at = %s, device_id = %s, is_active = 1
+                WHERE user_id = %s
+            ''', (token, expiry, device_id, user_id))
+            
             self.conn.commit()
-            return False, "❌ Token expired", 0
-        
-        if used_count >= device_limit:
-            return False, f"❌ Device limit reached ({device_limit})", 0
-        
-        cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
-        user_result = cursor.fetchone()
-        if user_result:
-            is_active_user, expires_at = user_result
-            if is_active_user and expires_at:
-                if datetime.now() < expires_at:
-                    return False, "❌ You already have an active token", 0
-        
-        cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
-        cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
-        
-        expiry = datetime.now() + timedelta(hours=hours)
-        cursor.execute('''
-            UPDATE users 
-            SET token = %s, token_activated_at = NOW(), token_expires_at = %s, device_id = %s, is_active = 1
-            WHERE user_id = %s
-        ''', (token, expiry, device_id, user_id))
-        
-        self.conn.commit()
-        return True, f"✅ Token redeemed! {hours} hours added.", hours
+            return True, f"✅ Token redeemed! {hours} hours added.", hours
+            
+        except Exception as e:
+            self.conn.rollback()
+            print(f"❌ redeem_token error: {e}")
+            return False, f"❌ Error: {str(e)}", 0
     
     def check_user_active(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT token_expires_at, is_active FROM users WHERE user_id = %s', (user_id,))
-        result = cursor.fetchone()
-        if not result or not result[1] or not result[0]:
+        try:
+            result = self.fetch_one('SELECT token_expires_at, is_active FROM users WHERE user_id = %s', (user_id,))
+            if not result or not result[1] or not result[0]:
+                return False
+            return datetime.now() < result[0]
+        except Exception as e:
+            print(f"❌ check_user_active error: {e}")
             return False
-        return datetime.now() < result[0]
     
     def get_user_token(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
-        return cursor.fetchone()
+        try:
+            return self.fetch_one('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
+        except Exception as e:
+            print(f"❌ get_user_token error: {e}")
+            return None
     
     def get_all_tokens(self):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM tokens ORDER BY created_at DESC')
-        return cursor.fetchall()
+        try:
+            return self.fetch_all('SELECT * FROM tokens ORDER BY created_at DESC')
+        except Exception as e:
+            print(f"❌ get_all_tokens error: {e}")
+            return []
     
     def get_setting(self, key):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT value FROM settings WHERE key = %s', (key,))
-        result = cursor.fetchone()
-        return result[0] if result else None
+        try:
+            result = self.fetch_one('SELECT value FROM settings WHERE key = %s', (key,))
+            return result[0] if result else None
+        except Exception as e:
+            print(f"❌ get_setting error: {e}")
+            return None
     
     def set_setting(self, key, value):
-        cursor = self.conn.cursor()
-        cursor.execute('UPDATE settings SET value = %s WHERE key = %s', (value, key))
-        self.conn.commit()
+        try:
+            self.execute_query('UPDATE settings SET value = %s WHERE key = %s', (value, key))
+        except Exception as e:
+            print(f"❌ set_setting error: {e}")
 
 # ==================== INIT DATABASE ====================
 print("[*] Connecting to database...")
@@ -455,7 +504,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - pg8000 WORKING                       ║
+    ║   📹 TOKEN VIDEO BOT - TRANSACTION FIXED                    ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
