@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - USER ID FIXED FINAL
+📹 TOKEN VIDEO BOT - CONFLICT FIXED + VIDEO FORWARD
 """
 
 import os
@@ -16,6 +16,7 @@ from telebot import types
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
+VIDEO_CHANNEL = "latestvideo10"
 
 # ==================== DATABASE CONNECTION ====================
 DB_HOST = "reseau.proxy.rlwy.net"
@@ -27,7 +28,13 @@ DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== FIX: Remove webhook to avoid 409 ====================
 bot = telebot.TeleBot(BOT_TOKEN)
+try:
+    bot.remove_webhook()
+    print("✅ Webhook removed")
+except:
+    pass
 
 # ==================== DATABASE CLASS ====================
 class Database:
@@ -266,35 +273,39 @@ print("[*] Connecting to database...")
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FETCHER ====================
-def fetch_channel_videos(limit=10):
-    videos = []
+# ==================== VIDEO FORWARD ====================
+def get_channel_messages():
+    """Get latest messages from channel using Telethon or requests"""
+    messages = []
     try:
         import requests
         import re
-        url = "https://t.me/s/latestvideo10"
+        url = f"https://t.me/s/{VIDEO_CHANNEL}"
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:
             html = response.text
+            # Find all message links
             pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
             matches = re.findall(pattern, html)
+            
+            # Find message texts
             title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
             titles = re.findall(title_pattern, html)
             
-            for i in range(min(limit, len(matches))):
+            for i in range(min(10, len(matches))):
                 link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
                 title = titles[i].replace('<b>', '').replace('</b>', '').strip()[:50] if i < len(titles) else f"Video {i+1}"
-                videos.append({'title': title, 'link': link})
+                messages.append({'title': title, 'link': link})
         
-        if not videos:
-            videos = [{'title': f'Latest Video {i+1}', 'link': f'https://t.me/latestvideo10/{i+1}'} for i in range(limit)]
+        if not messages:
+            messages = [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(10)]
         
-        return videos
+        return messages
     except Exception as e:
-        print(f"❌ Video fetch error: {e}")
-        return [{'title': f'Video {i+1}', 'link': f'https://t.me/latestvideo10/{i+1}'} for i in range(limit)]
+        print(f"❌ Fetch error: {e}")
+        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(10)]
 
 # ==================== BOT COMMANDS ====================
 
@@ -457,20 +468,22 @@ def get_videos(message):
         bot.reply_to(message, "❌ No active token. Use /redeem [TOKEN]")
         return
     
-    loading = bot.reply_to(message, "⏳ Fetching videos...")
-    videos = fetch_channel_videos(10)
+    loading = bot.reply_to(message, "⏳ Fetching latest videos...")
+    
+    videos = get_channel_messages()
     
     if not videos:
         bot.edit_message_text("❌ No videos found.", chat_id=message.chat.id, message_id=loading.message_id)
         return
     
+    # Send videos as forward links
     text = "📹 **LATEST VIDEOS**\n\n"
     for i, video in enumerate(videos, 1):
         text += f"{i}. {video['title']}\n"
         if video.get('link'):
-            text += f"   🔗 {video['link']}\n"
+            text += f"   🔗 [Watch Video]({video['link']})\n"
     
-    text += f"\n📌 [@latestvideo10](https://t.me/latestvideo10)"
+    text += f"\n📌 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})"
     bot.edit_message_text(text, chat_id=message.chat.id, message_id=loading.message_id, parse_mode='Markdown')
 
 # ===== CALLBACKS =====
@@ -541,7 +554,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - FINAL FIXED                         ║
+    ║   📹 TOKEN VIDEO BOT - CONFLICT FIXED + FORWARD             ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
