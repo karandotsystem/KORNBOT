@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - CONFLICT FIXED + VIDEO FORWARD
+📹 TOKEN VIDEO BOT - AUTO VIDEO ON LOGIN
 """
 
 import os
@@ -273,10 +273,10 @@ print("[*] Connecting to database...")
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FORWARD ====================
-def get_channel_messages():
-    """Get latest messages from channel using Telethon or requests"""
-    messages = []
+# ==================== VIDEO FETCHER ====================
+def get_channel_videos(limit=10):
+    """Get latest videos from channel"""
+    videos = []
     try:
         import requests
         import re
@@ -286,26 +286,48 @@ def get_channel_messages():
         
         if response.status_code == 200:
             html = response.text
-            # Find all message links
             pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
             matches = re.findall(pattern, html)
-            
-            # Find message texts
             title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
             titles = re.findall(title_pattern, html)
             
-            for i in range(min(10, len(matches))):
+            for i in range(min(limit, len(matches))):
                 link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
                 title = titles[i].replace('<b>', '').replace('</b>', '').strip()[:50] if i < len(titles) else f"Video {i+1}"
-                messages.append({'title': title, 'link': link})
+                videos.append({'title': title, 'link': link})
         
-        if not messages:
-            messages = [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(10)]
+        if not videos:
+            videos = [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
         
-        return messages
+        return videos
     except Exception as e:
-        print(f"❌ Fetch error: {e}")
-        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(10)]
+        print(f"❌ Video fetch error: {e}")
+        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
+
+def send_videos_to_user(chat_id, user_id):
+    """Send latest videos to user"""
+    is_active = db.check_user_active(user_id)
+    
+    if not is_active:
+        bot.send_message(chat_id, "❌ No active token. Use /redeem [TOKEN]")
+        return
+    
+    loading = bot.send_message(chat_id, "⏳ Fetching latest videos...")
+    
+    videos = get_channel_videos(10)
+    
+    if not videos:
+        bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
+        return
+    
+    text = "📹 **LATEST VIDEOS**\n\n"
+    for i, video in enumerate(videos, 1):
+        text += f"{i}. {video['title']}\n"
+        if video.get('link'):
+            text += f"   🔗 [Watch Video]({video['link']})\n"
+    
+    text += f"\n📌 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})"
+    bot.edit_message_text(text, chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
 
 # ==================== BOT COMMANDS ====================
 
@@ -321,8 +343,7 @@ def start(message):
         markup.add(
             types.InlineKeyboardButton("🔑 Create Token", callback_data="owner_create"),
             types.InlineKeyboardButton("📋 My Tokens", callback_data="owner_tokens"),
-            types.InlineKeyboardButton("🔗 Change Free Link", callback_data="owner_link"),
-            types.InlineKeyboardButton("📹 Latest Videos", callback_data="owner_videos")
+            types.InlineKeyboardButton("🔗 Change Free Link", callback_data="owner_link")
         )
         bot.reply_to(message, "👑 **WELCOME BOSS!**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
         return
@@ -339,12 +360,11 @@ def start(message):
         else:
             time_str = "Unknown"
         
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("📹 Latest Videos", callback_data="user_videos"),
-            types.InlineKeyboardButton("📊 My Token", callback_data="user_token")
-        )
-        bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str}\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
+        bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str}\n\n📹 Sending latest videos...")
+        
+        # Auto send videos
+        send_videos_to_user(message.chat.id, user_id)
+        
     else:
         markup = types.InlineKeyboardMarkup(row_width=1)
         link = db.get_setting('free_token_link') or 'https://t.me/latestvideo10'
@@ -433,7 +453,8 @@ def redeem_token(message):
     success, msg, hours = db.redeem_token(token, user_id, device_id)
     bot.reply_to(message, msg)
     if success:
-        start(message)
+        # Auto send videos after successful redeem
+        send_videos_to_user(message.chat.id, user_id)
 
 @bot.message_handler(commands=['tokeninfo'])
 def token_info(message):
@@ -458,33 +479,12 @@ def token_info(message):
     else:
         bot.reply_to(message, "❌ No token info.")
 
+# ===== VIDEOS COMMAND (Optional - still available) =====
+
 @bot.message_handler(commands=['videos'])
-def get_videos(message):
+def get_videos_command(message):
     user_id = message.from_user.id
-    
-    is_active = db.check_user_active(user_id)
-    
-    if not is_active:
-        bot.reply_to(message, "❌ No active token. Use /redeem [TOKEN]")
-        return
-    
-    loading = bot.reply_to(message, "⏳ Fetching latest videos...")
-    
-    videos = get_channel_messages()
-    
-    if not videos:
-        bot.edit_message_text("❌ No videos found.", chat_id=message.chat.id, message_id=loading.message_id)
-        return
-    
-    # Send videos as forward links
-    text = "📹 **LATEST VIDEOS**\n\n"
-    for i, video in enumerate(videos, 1):
-        text += f"{i}. {video['title']}\n"
-        if video.get('link'):
-            text += f"   🔗 [Watch Video]({video['link']})\n"
-    
-    text += f"\n📌 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})"
-    bot.edit_message_text(text, chat_id=message.chat.id, message_id=loading.message_id, parse_mode='Markdown')
+    send_videos_to_user(message.chat.id, user_id)
 
 # ===== CALLBACKS =====
 
@@ -505,28 +505,10 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📌 /change [LINK]")
     
-    elif call.data == "owner_videos":
-        bot.answer_callback_query(call.id)
-        get_videos(call.message)
-    
     elif call.data == "user_redeem":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "🔑 Enter token:")
         bot.register_next_step_handler(call.message, process_redeem)
-    
-    elif call.data == "user_videos":
-        bot.answer_callback_query(call.id)
-        if is_active:
-            get_videos(call.message)
-        else:
-            bot.answer_callback_query(call.id, "❌ No active token!", show_alert=True)
-    
-    elif call.data == "user_token":
-        bot.answer_callback_query(call.id)
-        if is_active:
-            token_info(call.message)
-        else:
-            bot.answer_callback_query(call.id, "❌ No active token!", show_alert=True)
 
 def process_redeem(message):
     token = message.text.strip().upper()
@@ -536,14 +518,14 @@ def process_redeem(message):
     success, msg, hours = db.redeem_token(token, user_id, device_id)
     bot.reply_to(message, msg)
     if success:
-        start(message)
+        send_videos_to_user(message.chat.id, user_id)
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
     if message.from_user.id == OWNER_ID:
         text = "👑 **OWNER HELP**\n\n/create [HOURS] [LIMIT]\n/tokens\n/change [LINK]\n/videos"
     else:
-        text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos\n/tokeninfo"
+        text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos (optional)\n/tokeninfo"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: True)
@@ -554,7 +536,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - CONFLICT FIXED + FORWARD             ║
+    ║   📹 TOKEN VIDEO BOT - AUTO VIDEO ON LOGIN                  ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
