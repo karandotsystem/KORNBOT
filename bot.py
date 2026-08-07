@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FINAL WORKING
-Database: Supabase (Unchanged)
+📹 TOKEN VIDEO BOT - FINAL FIXED
 """
 
 import os
@@ -10,7 +9,6 @@ import logging
 import random
 import string
 import pg8000
-import asyncio
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
@@ -18,6 +16,16 @@ from telebot import types
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
+
+# ==================== DATABASE CONNECTION (FIXED) ====================
+# Method 1: Direct connection
+DB_HOST = "db.dbskphxuqgmgqsonipnh.supabase.co"
+DB_PORT = 5432
+DB_NAME = "postgres"
+DB_USER = "postgres"
+DB_PASSWORD = "KARANxIOS@81680"
+
+# Method 2: Connection string (with encoded password)
 DATABASE_URL = "postgresql://postgres:KARANxIOS%4081680@db.dbskphxuqgmgqsonipnh.supabase.co:5432/postgres"
 
 logging.basicConfig(level=logging.INFO)
@@ -25,30 +33,29 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ==================== DATABASE CONNECTION ====================
+# ==================== DATABASE ====================
 class Database:
     def __init__(self):
         self.conn = None
+        self.connect()
     
     def connect(self):
-        import re
-        pattern = r'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)'
-        match = re.match(pattern, DATABASE_URL)
-        
-        if not match:
-            raise ValueError("Invalid DATABASE_URL")
-        
-        user, password, host, port, database = match.groups()
-        
-        self.conn = pg8000.connect(
-            user=user,
-            password=password,
-            host=host,
-            port=int(port),
-            database=database
-        )
-        self.init_tables()
-        return self.conn
+        try:
+            self.conn = pg8000.connect(
+                user=DB_USER,
+                password=DB_PASSWORD,
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                timeout=30
+            )
+            print("✅ Database connected successfully!")
+            self.init_tables()
+        except Exception as e:
+            print(f"❌ Database connection error: {e}")
+            # Retry after 5 seconds
+            time.sleep(5)
+            self.connect()
     
     def init_tables(self):
         cursor = self.conn.cursor()
@@ -102,6 +109,7 @@ class Database:
         ''')
         cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
         self.conn.commit()
+        print("✅ Tables ready!")
     
     def create_user(self, user_id, username, first_name):
         cursor = self.conn.cursor()
@@ -194,8 +202,10 @@ class Database:
         cursor.execute('UPDATE settings SET value = %s WHERE key = %s', (value, key))
         self.conn.commit()
 
+# ==================== INIT DATABASE ====================
+print("[*] Connecting to database...")
 db = Database()
-db.connect()
+print("[*] Database ready!")
 
 # ==================== VIDEO FETCHER ====================
 def fetch_channel_videos(limit=10):
@@ -451,18 +461,19 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - FINAL WORKING                        ║
+    ║   📹 TOKEN VIDEO BOT - FINAL FIXED                          ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
+    print(f"✅ Database: Connected")
     print(f"✅ Bot starting...")
     
-    try:
-        bot.infinity_polling(timeout=10, long_polling_timeout=10)
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        time.sleep(3)
-        main()
+    while True:
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=10)
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
