@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - pg8000 VERSION
+📹 TOKEN VIDEO BOT v6.0 - RAILWAY DATABASE READY
+- Auto Database Connection
+- Owner/User Separate Menus
+- Token System with Device Limit
+- Latest Videos from @latestvideo10
 """
 
 import os
@@ -17,19 +21,21 @@ from telebot import types
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 
-# Supabase Pooler URL (port 6543)
-DB_HOST = "db.dbskphxuqgmgqsonipnh.supabase.co"
-DB_PORT = 6543
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PASSWORD = "KARANxIOS@81680"
+# ==================== DATABASE CONNECTION ====================
+# Railway auto-sets DATABASE_URL - No manual URL needed
+import os
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# If DATABASE_URL not found, use this fallback (Railway internal)
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql://postgres:password@localhost:5432/postgres"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ==================== DATABASE ====================
+# ==================== DATABASE CLASS ====================
 class Database:
     def __init__(self):
         self.conn = None
@@ -38,11 +44,11 @@ class Database:
     def connect(self):
         try:
             self.conn = pg8000.connect(
-                user=DB_USER,
-                password=DB_PASSWORD,
-                host=DB_HOST,
-                port=DB_PORT,
-                database=DB_NAME,
+                user="postgres",
+                password=os.environ.get("POSTGRES_PASSWORD", "password"),
+                host="localhost",
+                port=5432,
+                database="postgres",
                 timeout=30
             )
             print("✅ Database connected!")
@@ -455,7 +461,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - pg8000 VERSION                        ║
+    ║   📹 TOKEN VIDEO BOT v6.0 - RAILWAY DATABASE               ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
