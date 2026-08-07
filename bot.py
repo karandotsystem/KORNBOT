@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - REDEEM FIXED
+📹 TOKEN VIDEO BOT - VIDEO FETCH FIXED
 """
 
 import os
@@ -159,7 +159,6 @@ class Database:
         try:
             cursor = self.conn.cursor()
             
-            # Check if token exists in database
             cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
             result = cursor.fetchone()
             
@@ -184,7 +183,6 @@ class Database:
                 self.conn.commit()
                 return False, f"❌ Device limit reached ({device_limit})", 0
             
-            # Check if user already has active token
             cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
             user_result = cursor.fetchone()
             if user_result:
@@ -194,7 +192,6 @@ class Database:
                         self.conn.commit()
                         return False, "❌ You already have an active token", 0
             
-            # Update token usage
             cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
             cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
             
@@ -216,10 +213,23 @@ class Database:
     
     def check_user_active(self, user_id):
         try:
-            result = self.fetch_one('SELECT token_expires_at, is_active FROM users WHERE user_id = %s', (user_id,))
-            if not result or not result[1] or not result[0]:
+            result = self.fetch_one('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
+            print(f"🔍 check_user_active: user_id={user_id}, result={result}")
+            
+            if not result:
                 return False
-            return datetime.now() < result[0]
+            
+            is_active, expires_at = result
+            
+            # Check if is_active is 1 and token hasn't expired
+            if not is_active or is_active == 0:
+                return False
+            
+            if not expires_at:
+                return False
+            
+            return datetime.now() < expires_at
+            
         except Exception as e:
             print(f"❌ check_user_active error: {e}")
             return False
@@ -307,7 +317,10 @@ def start(message):
         bot.reply_to(message, "👑 **WELCOME BOSS!**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
         return
     
-    if db.check_user_active(user_id):
+    is_active = db.check_user_active(user_id)
+    print(f"🔍 User {user_id} active status: {is_active}")
+    
+    if is_active:
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("📹 Latest Videos", callback_data="user_videos"),
@@ -402,6 +415,7 @@ def redeem_token(message):
     success, msg, hours = db.redeem_token(token, user_id, device_id)
     bot.reply_to(message, msg)
     if success:
+        # Show main menu after successful redeem
         start(message)
 
 @bot.message_handler(commands=['tokeninfo'])
@@ -431,8 +445,11 @@ def token_info(message):
 def get_videos(message):
     user_id = message.from_user.id
     
-    if not db.check_user_active(user_id):
-        bot.reply_to(message, "❌ No active token.")
+    is_active = db.check_user_active(user_id)
+    print(f"🔍 Videos command - User {user_id} active: {is_active}")
+    
+    if not is_active:
+        bot.reply_to(message, "❌ No active token. Use /redeem [TOKEN]")
         return
     
     loading = bot.reply_to(message, "⏳ Fetching videos...")
@@ -455,6 +472,9 @@ def get_videos(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    user_id = call.from_user.id
+    is_active = db.check_user_active(user_id)
+    
     if call.data == "owner_create":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📌 /create [HOURS] [LIMIT]")
@@ -478,11 +498,17 @@ def handle_callback(call):
     
     elif call.data == "user_videos":
         bot.answer_callback_query(call.id)
-        get_videos(call.message)
+        if is_active:
+            get_videos(call.message)
+        else:
+            bot.answer_callback_query(call.id, "❌ No active token!", show_alert=True)
     
     elif call.data == "user_token":
         bot.answer_callback_query(call.id)
-        token_info(call.message)
+        if is_active:
+            token_info(call.message)
+        else:
+            bot.answer_callback_query(call.id, "❌ No active token!", show_alert=True)
 
 def process_redeem(message):
     token = message.text.strip().upper()
@@ -510,7 +536,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - REDEEM FIXED                         ║
+    ║   📹 TOKEN VIDEO BOT - VIDEO FETCH FIXED                    ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
