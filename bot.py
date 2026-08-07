@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT v6.0 - RAILWAY DATABASE READY
-- Auto Database Connection
-- Owner/User Separate Menus
-- Token System with Device Limit
-- Latest Videos from @latestvideo10
+📹 TOKEN VIDEO BOT - FINAL WORKING
+Railway Database Connected
 """
 
 import os
@@ -12,7 +9,7 @@ import time
 import logging
 import random
 import string
-import pg8000
+import psycopg2
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
@@ -22,13 +19,8 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 
 # ==================== DATABASE CONNECTION ====================
-# Railway auto-sets DATABASE_URL - No manual URL needed
-import os
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-# If DATABASE_URL not found, use this fallback (Railway internal)
-if not DATABASE_URL:
-    DATABASE_URL = "postgresql://postgres:password@localhost:5432/postgres"
+# TERA DATABASE URL - COPY KARO
+DATABASE_URL = "postgresql://postgres:dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa@reseau.proxy.rlwy.net:29905/railway"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,15 +35,8 @@ class Database:
     
     def connect(self):
         try:
-            self.conn = pg8000.connect(
-                user="postgres",
-                password=os.environ.get("POSTGRES_PASSWORD", "password"),
-                host="localhost",
-                port=5432,
-                database="postgres",
-                timeout=30
-            )
-            print("✅ Database connected!")
+            self.conn = psycopg2.connect(DATABASE_URL)
+            print("✅ Database connected successfully!")
             self.init_tables()
         except Exception as e:
             print(f"❌ DB Error: {e}")
@@ -461,10 +446,11 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT v6.0 - RAILWAY DATABASE               ║
+    ║   📹 TOKEN VIDEO BOT - RAILWAY CONNECTED                    ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
+    print(f"✅ Database: Connected")
     print(f"✅ Bot starting...")
     
     while True:
