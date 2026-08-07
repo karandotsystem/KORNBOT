@@ -18,7 +18,7 @@ from telebot import types
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
-DATABASE_URL = "postgresql://postgres:KARANxIOS@81680@db.dbskphxuqgmgqsonipnh.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:KARANxIOS%4081680@db.dbskphxuqgmgqsonipnh.supabase.co:5432/postgres"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
