@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FINAL WORKING
-Railway Database Connected
+📹 TOKEN VIDEO BOT - FINAL pg8000 VERSION
 """
 
 import os
@@ -9,7 +8,7 @@ import time
 import logging
 import random
 import string
-import psycopg2
+import pg8000
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
@@ -19,8 +18,11 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 
 # ==================== DATABASE CONNECTION ====================
-# TERA DATABASE URL - COPY KARO
-DATABASE_URL = "postgresql://postgres:dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa@reseau.proxy.rlwy.net:29905/railway"
+DB_HOST = "reseau.proxy.rlwy.net"
+DB_PORT = 29905
+DB_NAME = "railway"
+DB_USER = "postgres"
+DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +37,14 @@ class Database:
     
     def connect(self):
         try:
-            self.conn = psycopg2.connect(DATABASE_URL)
+            self.conn = pg8000.connect(
+                user=DB_USER,
+                password=DB_PASSWORD,
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                timeout=30
+            )
             print("✅ Database connected successfully!")
             self.init_tables()
         except Exception as e:
@@ -446,7 +455,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - RAILWAY CONNECTED                    ║
+    ║   📹 TOKEN VIDEO BOT - pg8000 WORKING                       ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
