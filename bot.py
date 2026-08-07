@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - VIDEO FETCH FIXED
+📹 TOKEN VIDEO BOT - DATABASE SYNC FIXED
 """
 
 import os
@@ -162,8 +162,6 @@ class Database:
             cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
             result = cursor.fetchone()
             
-            print(f"🔍 Redeem check: Token={token}, Result={result}")
-            
             if not result:
                 self.conn.commit()
                 return False, "❌ Invalid token", 0
@@ -213,22 +211,30 @@ class Database:
     
     def check_user_active(self, user_id):
         try:
-            result = self.fetch_one('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
-            print(f"🔍 check_user_active: user_id={user_id}, result={result}")
+            # Direct query to check is_active and expiry
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            self.conn.commit()
+            
+            print(f"🔍 DB check: user_id={user_id}, result={result}")
             
             if not result:
                 return False
             
             is_active, expires_at = result
             
-            # Check if is_active is 1 and token hasn't expired
-            if not is_active or is_active == 0:
+            # is_active should be 1 or True
+            if is_active != 1:
                 return False
             
             if not expires_at:
                 return False
             
-            return datetime.now() < expires_at
+            # Check if token is still valid
+            is_valid = datetime.now() < expires_at
+            print(f"🔍 Token valid: {is_valid}, expires: {expires_at}")
+            return is_valid
             
         except Exception as e:
             print(f"❌ check_user_active error: {e}")
@@ -318,15 +324,22 @@ def start(message):
         return
     
     is_active = db.check_user_active(user_id)
-    print(f"🔍 User {user_id} active status: {is_active}")
+    print(f"🔍 User {user_id} active: {is_active}")
     
     if is_active:
+        info = db.get_user_token(user_id)
+        if info:
+            token = info[0]
+            expires = info[2]
+            remaining = expires - datetime.now() if expires else None
+            time_str = f"{int(remaining.total_seconds() // 3600)}h {int((remaining.total_seconds() % 3600) // 60)}m" if remaining and remaining.total_seconds() > 0 else "Expiring soon"
+        
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("📹 Latest Videos", callback_data="user_videos"),
             types.InlineKeyboardButton("📊 My Token", callback_data="user_token")
         )
-        bot.reply_to(message, "✅ **ACCESS GRANTED**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
+        bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str if info else 'Unknown'}\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
     else:
         markup = types.InlineKeyboardMarkup(row_width=1)
         link = db.get_setting('free_token_link') or 'https://t.me/latestvideo10'
@@ -415,7 +428,6 @@ def redeem_token(message):
     success, msg, hours = db.redeem_token(token, user_id, device_id)
     bot.reply_to(message, msg)
     if success:
-        # Show main menu after successful redeem
         start(message)
 
 @bot.message_handler(commands=['tokeninfo'])
@@ -423,7 +435,7 @@ def token_info(message):
     user_id = message.from_user.id
     
     if not db.check_user_active(user_id):
-        bot.reply_to(message, "❌ No active token.")
+        bot.reply_to(message, "❌ No active token. Use /redeem [TOKEN]")
         return
     
     info = db.get_user_token(user_id)
@@ -536,7 +548,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - VIDEO FETCH FIXED                    ║
+    ║   📹 TOKEN VIDEO BOT - SYNC FIXED                           ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
