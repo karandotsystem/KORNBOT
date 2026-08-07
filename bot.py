@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FINAL FIXED
+📹 TOKEN VIDEO BOT - DEBUG FIX
 """
 
 import os
@@ -17,23 +17,19 @@ from telebot import types
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 
-# ==================== DATABASE CONNECTION (FIXED) ====================
-# Method 1: Direct connection
+# ==================== DATABASE ====================
 DB_HOST = "db.dbskphxuqgmgqsonipnh.supabase.co"
 DB_PORT = 5432
 DB_NAME = "postgres"
 DB_USER = "postgres"
 DB_PASSWORD = "KARANxIOS@81680"
 
-# Method 2: Connection string (with encoded password)
-DATABASE_URL = "postgresql://postgres:KARANxIOS%4081680@db.dbskphxuqgmgqsonipnh.supabase.co:5432/postgres"
-
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ==================== DATABASE ====================
+# ==================== DATABASE CLASS ====================
 class Database:
     def __init__(self):
         self.conn = None
@@ -41,6 +37,7 @@ class Database:
     
     def connect(self):
         try:
+            print("[*] Connecting to database...")
             self.conn = pg8000.connect(
                 user=DB_USER,
                 password=DB_PASSWORD,
@@ -49,11 +46,10 @@ class Database:
                 database=DB_NAME,
                 timeout=30
             )
-            print("✅ Database connected successfully!")
+            print("✅ Database connected!")
             self.init_tables()
         except Exception as e:
-            print(f"❌ Database connection error: {e}")
-            # Retry after 5 seconds
+            print(f"❌ DB Error: {e}")
             time.sleep(5)
             self.connect()
     
@@ -112,98 +108,127 @@ class Database:
         print("✅ Tables ready!")
     
     def create_user(self, user_id, username, first_name):
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            INSERT INTO users (user_id, username, first_name, created_at)
-            VALUES (%s, %s, %s, NOW())
-            ON CONFLICT (user_id) DO NOTHING
-        ''', (user_id, username, first_name))
-        self.conn.commit()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO users (user_id, username, first_name, created_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (user_id) DO NOTHING
+            ''', (user_id, username, first_name))
+            self.conn.commit()
+        except Exception as e:
+            print(f"❌ create_user error: {e}")
     
     def create_token(self, token, created_by, hours, device_limit):
-        cursor = self.conn.cursor()
-        expiry = datetime.now() + timedelta(hours=hours)
-        cursor.execute('''
-            INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
-            VALUES (%s, %s, %s, %s, NOW(), %s, 1)
-        ''', (token, created_by, device_limit, hours, expiry))
-        self.conn.commit()
+        try:
+            cursor = self.conn.cursor()
+            expiry = datetime.now() + timedelta(hours=hours)
+            cursor.execute('''
+                INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
+                VALUES (%s, %s, %s, %s, NOW(), %s, 1)
+            ''', (token, created_by, device_limit, hours, expiry))
+            self.conn.commit()
+        except Exception as e:
+            print(f"❌ create_token error: {e}")
     
     def redeem_token(self, token, user_id, device_id):
-        token = token.upper().strip()
-        cursor = self.conn.cursor()
-        
-        cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
-        result = cursor.fetchone()
-        
-        if not result:
-            return False, "❌ Invalid token", 0
-        
-        token_val, device_limit, used_count, hours, expiry_time, is_active = result
-        
-        if not is_active:
-            return False, "❌ Token expired", 0
-        
-        if datetime.now() > expiry_time:
-            cursor.execute('UPDATE tokens SET is_active = 0 WHERE token = %s', (token,))
+        try:
+            token = token.upper().strip()
+            cursor = self.conn.cursor()
+            
+            cursor.execute('SELECT token, device_limit, used_count, hours, expiry_time, is_active FROM tokens WHERE token = %s', (token,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return False, "❌ Invalid token", 0
+            
+            token_val, device_limit, used_count, hours, expiry_time, is_active = result
+            
+            if not is_active:
+                return False, "❌ Token expired", 0
+            
+            if datetime.now() > expiry_time:
+                cursor.execute('UPDATE tokens SET is_active = 0 WHERE token = %s', (token,))
+                self.conn.commit()
+                return False, "❌ Token expired", 0
+            
+            if used_count >= device_limit:
+                return False, f"❌ Device limit reached ({device_limit})", 0
+            
+            cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
+            user_result = cursor.fetchone()
+            if user_result:
+                is_active_user, expires_at = user_result
+                if is_active_user and expires_at:
+                    if datetime.now() < expires_at:
+                        return False, "❌ You already have an active token", 0
+            
+            cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
+            cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
+            
+            expiry = datetime.now() + timedelta(hours=hours)
+            cursor.execute('''
+                UPDATE users 
+                SET token = %s, token_activated_at = NOW(), token_expires_at = %s, device_id = %s, is_active = 1
+                WHERE user_id = %s
+            ''', (token, expiry, device_id, user_id))
+            
             self.conn.commit()
-            return False, "❌ Token expired", 0
-        
-        if used_count >= device_limit:
-            return False, f"❌ Device limit reached ({device_limit})", 0
-        
-        cursor.execute('SELECT is_active, token_expires_at FROM users WHERE user_id = %s', (user_id,))
-        user_result = cursor.fetchone()
-        if user_result:
-            is_active_user, expires_at = user_result
-            if is_active_user and expires_at:
-                if datetime.now() < expires_at:
-                    return False, "❌ You already have an active token", 0
-        
-        cursor.execute('UPDATE tokens SET used_count = used_count + 1 WHERE token = %s', (token,))
-        cursor.execute('INSERT INTO token_usage (token, user_id, device_id, used_at) VALUES (%s, %s, %s, NOW())', (token, user_id, device_id))
-        
-        expiry = datetime.now() + timedelta(hours=hours)
-        cursor.execute('''
-            UPDATE users 
-            SET token = %s, token_activated_at = NOW(), token_expires_at = %s, device_id = %s, is_active = 1
-            WHERE user_id = %s
-        ''', (token, expiry, device_id, user_id))
-        
-        self.conn.commit()
-        return True, f"✅ Token redeemed! {hours} hours added.", hours
+            return True, f"✅ Token redeemed! {hours} hours added.", hours
+        except Exception as e:
+            print(f"❌ redeem_token error: {e}")
+            return False, f"❌ Error: {str(e)}", 0
     
     def check_user_active(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT token_expires_at, is_active FROM users WHERE user_id = %s', (user_id,))
-        result = cursor.fetchone()
-        if not result or not result[1] or not result[0]:
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT token_expires_at, is_active FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            if not result or not result[1] or not result[0]:
+                return False
+            return datetime.now() < result[0]
+        except Exception as e:
+            print(f"❌ check_user_active error: {e}")
             return False
-        return datetime.now() < result[0]
     
     def get_user_token(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
-        return cursor.fetchone()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"❌ get_user_token error: {e}")
+            return None
     
     def get_all_tokens(self):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM tokens ORDER BY created_at DESC')
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM tokens ORDER BY created_at DESC')
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"❌ get_all_tokens error: {e}")
+            return []
     
     def get_setting(self, key):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT value FROM settings WHERE key = %s', (key,))
-        result = cursor.fetchone()
-        return result[0] if result else None
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT value FROM settings WHERE key = %s', (key,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        except Exception as e:
+            print(f"❌ get_setting error: {e}")
+            return None
     
     def set_setting(self, key, value):
-        cursor = self.conn.cursor()
-        cursor.execute('UPDATE settings SET value = %s WHERE key = %s', (value, key))
-        self.conn.commit()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('UPDATE settings SET value = %s WHERE key = %s', (value, key))
+            self.conn.commit()
+        except Exception as e:
+            print(f"❌ set_setting error: {e}")
 
 # ==================== INIT DATABASE ====================
-print("[*] Connecting to database...")
+print("[*] Initializing database...")
 db = Database()
 print("[*] Database ready!")
 
@@ -234,18 +259,22 @@ def fetch_channel_videos(limit=10):
         
         return videos
     except Exception as e:
-        logger.error(f"Video fetch error: {e}")
+        print(f"❌ Video fetch error: {e}")
         return [{'title': f'Video {i+1}', 'link': f'https://t.me/latestvideo10/{i+1}'} for i in range(limit)]
 
 # ==================== BOT COMMANDS ====================
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    print(f"[*] /start from {message.from_user.id}")
     user_id = message.from_user.id
     username = message.from_user.username or "Unknown"
     first_name = message.from_user.first_name or "User"
     
-    db.create_user(user_id, username, first_name)
+    try:
+        db.create_user(user_id, username, first_name)
+    except Exception as e:
+        print(f"❌ start error: {e}")
     
     if user_id == OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=1)
@@ -278,6 +307,7 @@ def start(message):
 
 @bot.message_handler(commands=['create'])
 def create_token(message):
+    print(f"[*] /create from {message.from_user.id}")
     if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "❌ Owner only.")
         return
@@ -307,6 +337,7 @@ def create_token(message):
 
 @bot.message_handler(commands=['change'])
 def change_link(message):
+    print(f"[*] /change from {message.from_user.id}")
     if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "❌ Owner only.")
         return
@@ -321,6 +352,7 @@ def change_link(message):
 
 @bot.message_handler(commands=['tokens'])
 def list_tokens(message):
+    print(f"[*] /tokens from {message.from_user.id}")
     if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "❌ Owner only.")
         return
@@ -341,6 +373,7 @@ def list_tokens(message):
 
 @bot.message_handler(commands=['redeem'])
 def redeem_token(message):
+    print(f"[*] /redeem from {message.from_user.id}")
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         bot.reply_to(message, "❌ /redeem [TOKEN]\nExample: /redeem ABC123XYZ789")
@@ -357,6 +390,7 @@ def redeem_token(message):
 
 @bot.message_handler(commands=['tokeninfo'])
 def token_info(message):
+    print(f"[*] /tokeninfo from {message.from_user.id}")
     user_id = message.from_user.id
     
     if not db.check_user_active(user_id):
@@ -380,6 +414,7 @@ def token_info(message):
 
 @bot.message_handler(commands=['videos'])
 def get_videos(message):
+    print(f"[*] /videos from {message.from_user.id}")
     user_id = message.from_user.id
     
     if not db.check_user_active(user_id):
@@ -406,6 +441,7 @@ def get_videos(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
+    print(f"[*] Callback: {call.data} from {call.from_user.id}")
     if call.data == "owner_create":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📌 /create [HOURS] [LIMIT]")
@@ -436,6 +472,7 @@ def handle_callback(call):
         token_info(call.message)
 
 def process_redeem(message):
+    print(f"[*] process_redeem from {message.from_user.id}")
     token = message.text.strip().upper()
     user_id = message.from_user.id
     device_id = f"device_{user_id}_{int(time.time())}"
@@ -455,24 +492,24 @@ def help_command(message):
 
 @bot.message_handler(func=lambda message: True)
 def default_handler(message):
+    print(f"[*] Default from {message.from_user.id}: {message.text[:30]}")
     bot.reply_to(message, "❓ Use /start")
 
 # ==================== MAIN ====================
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - FINAL FIXED                          ║
+    ║   📹 TOKEN VIDEO BOT - DEBUG FIXED                          ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
-    print(f"✅ Database: Connected")
     print(f"✅ Bot starting...")
     
     while True:
         try:
             bot.infinity_polling(timeout=10, long_polling_timeout=10)
         except Exception as e:
-            print(f"❌ Error: {str(e)}")
+            print(f"❌ Polling error: {str(e)}")
             time.sleep(5)
 
 if __name__ == "__main__":
