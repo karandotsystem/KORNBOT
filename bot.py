@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - AUTO VIDEO ON LOGIN
+📹 TOKEN VIDEO BOT - DIRECT VIDEO FORWARD
+API Credentials Added
 """
 
 import os
@@ -9,14 +10,21 @@ import logging
 import random
 import string
 import pg8000
+import asyncio
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
+from telethon import TelegramClient
+from telethon.tl.types import MessageMediaDocument, MessageMediaPhoto
 
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 VIDEO_CHANNEL = "latestvideo10"
+
+# ==================== TELEGRAM API CREDENTIALS ====================
+API_ID = 31486711
+API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
 
 # ==================== DATABASE CONNECTION ====================
 DB_HOST = "reseau.proxy.rlwy.net"
@@ -28,13 +36,16 @@ DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== FIX: Remove webhook to avoid 409 ====================
+# ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
     print("✅ Webhook removed")
 except:
     pass
+
+# ==================== TELEGRAM CLIENT SETUP ====================
+telethon_client = TelegramClient('video_bot_session', API_ID, API_HASH)
 
 # ==================== DATABASE CLASS ====================
 class Database:
@@ -102,6 +113,7 @@ class Database:
                     id SERIAL PRIMARY KEY,
                     title TEXT,
                     link TEXT,
+                    video_id TEXT,
                     fetched_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
@@ -273,61 +285,67 @@ print("[*] Connecting to database...")
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FETCHER ====================
-def get_channel_videos(limit=10):
-    """Get latest videos from channel"""
-    videos = []
+# ==================== VIDEO FORWARD FUNCTIONS ====================
+async def get_channel_messages():
+    """Get latest video messages from channel using Telethon"""
+    messages = []
     try:
-        import requests
-        import re
-        url = f"https://t.me/s/{VIDEO_CHANNEL}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=15)
-        
-        if response.status_code == 200:
-            html = response.text
-            pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
-            matches = re.findall(pattern, html)
-            title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
-            titles = re.findall(title_pattern, html)
-            
-            for i in range(min(limit, len(matches))):
-                link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
-                title = titles[i].replace('<b>', '').replace('</b>', '').strip()[:50] if i < len(titles) else f"Video {i+1}"
-                videos.append({'title': title, 'link': link})
-        
-        if not videos:
-            videos = [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
-        
-        return videos
+        channel_entity = await telethon_client.get_entity(f"@{VIDEO_CHANNEL}")
+        async for msg in telethon_client.iter_messages(channel_entity, limit=10):
+            if msg.media:
+                messages.append({
+                    'id': msg.id,
+                    'date': msg.date,
+                    'text': msg.text or f"Video {len(messages)+1}",
+                    'media': msg.media
+                })
+        return messages
     except Exception as e:
-        print(f"❌ Video fetch error: {e}")
-        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
+        print(f"❌ Telethon fetch error: {e}")
+        return []
+
+async def forward_video_to_user(user_id, message):
+    """Forward video to user using Telethon"""
+    try:
+        channel_entity = await telethon_client.get_entity(f"@{VIDEO_CHANNEL}")
+        await telethon_client.forward_messages(user_id, message['id'], channel_entity)
+        return True
+    except Exception as e:
+        print(f"❌ Forward error: {e}")
+        return False
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest videos to user"""
+    """Send latest videos directly to user"""
+    # Check if user has active token
     is_active = db.check_user_active(user_id)
     
     if not is_active:
         bot.send_message(chat_id, "❌ No active token. Use /redeem [TOKEN]")
         return
     
-    loading = bot.send_message(chat_id, "⏳ Fetching latest videos...")
+    bot.send_message(chat_id, "📹 Fetching latest videos...")
     
-    videos = get_channel_videos(10)
+    # Get messages from channel
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    messages = loop.run_until_complete(get_channel_messages())
     
-    if not videos:
-        bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
+    if not messages:
+        bot.send_message(chat_id, "❌ No videos found.")
         return
     
-    text = "📹 **LATEST VIDEOS**\n\n"
-    for i, video in enumerate(videos, 1):
-        text += f"{i}. {video['title']}\n"
-        if video.get('link'):
-            text += f"   🔗 [Watch Video]({video['link']})\n"
+    bot.send_message(chat_id, f"📹 **Found {len(messages)} videos. Forwarding...**", parse_mode='Markdown')
     
-    text += f"\n📌 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})"
-    bot.edit_message_text(text, chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
+    # Forward each video
+    for i, msg in enumerate(messages, 1):
+        try:
+            loop.run_until_complete(forward_video_to_user(user_id, msg))
+            bot.send_message(chat_id, f"✅ Video {i} sent.")
+            time.sleep(1)
+        except Exception as e:
+            bot.send_message(chat_id, f"❌ Failed to send video {i}: {e}")
+    
+    bot.send_message(chat_id, f"📌 **All videos sent!**\n🔹 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})", parse_mode='Markdown')
 
 # ==================== BOT COMMANDS ====================
 
@@ -479,8 +497,6 @@ def token_info(message):
     else:
         bot.reply_to(message, "❌ No token info.")
 
-# ===== VIDEOS COMMAND (Optional - still available) =====
-
 @bot.message_handler(commands=['videos'])
 def get_videos_command(message):
     user_id = message.from_user.id
@@ -525,22 +541,33 @@ def help_command(message):
     if message.from_user.id == OWNER_ID:
         text = "👑 **OWNER HELP**\n\n/create [HOURS] [LIMIT]\n/tokens\n/change [LINK]\n/videos"
     else:
-        text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos (optional)\n/tokeninfo"
+        text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos\n/tokeninfo"
     bot.reply_to(message, text, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda message: True)
 def default_handler(message):
     bot.reply_to(message, "❓ Use /start")
 
+# ==================== TELEGRAM CLIENT START ====================
+async def start_telethon():
+    await telethon_client.start()
+    print("✅ Telethon client connected!")
+
 # ==================== MAIN ====================
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - AUTO VIDEO ON LOGIN                  ║
+    ║   📹 TOKEN VIDEO BOT - DIRECT VIDEO FORWARD                 ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
+    
+    # Start Telethon client
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(start_telethon())
     print(f"✅ Owner: {OWNER_ID}")
     print(f"✅ Database: Connected")
+    print(f"✅ Video Channel: @{VIDEO_CHANNEL}")
     print(f"✅ Bot starting...")
     
     while True:
