@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - TELEGRAM API (NO TELEGON)
-Direct Video Forward using Bot API + Requests
+📹 TOKEN VIDEO BOT - DIRECT VIDEO IN CHAT (NO LINKS)
 """
 
 import os
@@ -11,6 +10,8 @@ import random
 import string
 import pg8000
 import requests
+import re
+import io
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
@@ -30,7 +31,6 @@ DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
@@ -103,8 +103,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS videos_cache (
                     id SERIAL PRIMARY KEY,
                     title TEXT,
-                    link TEXT,
-                    video_id TEXT,
+                    file_id TEXT,
                     fetched_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
@@ -276,21 +275,19 @@ print("[*] Connecting to database...")
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FETCHER (NO TELEGON) ====================
-def get_channel_videos(limit=10):
-    """Get latest videos using Bot API + requests"""
+# ==================== VIDEO FETCHER ====================
+def get_video_url_from_channel(limit=10):
+    """Get video links from channel"""
     videos = []
     try:
-        # Get channel messages using Bot API
         url = f"https://t.me/s/{VIDEO_CHANNEL}"
         headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:
-            import re
             html = response.text
             
-            # Find message links
+            # Find message links (videos/media)
             pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
             matches = re.findall(pattern, html)
             
@@ -298,21 +295,60 @@ def get_channel_videos(limit=10):
             title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
             titles = re.findall(title_pattern, html)
             
+            # Check for video indicators
+            has_media_pattern = r'class="tgme_widget_message_photo_wrap"'
+            has_media = re.findall(has_media_pattern, html)
+            
             for i in range(min(limit, len(matches))):
                 link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
                 title = titles[i].replace('<b>', '').replace('</b>', '').strip()[:50] if i < len(titles) else f"Video {i+1}"
-                videos.append({'title': title, 'link': link})
+                has_video = i < len(has_media)
+                videos.append({
+                    'title': title,
+                    'link': link,
+                    'has_video': has_video
+                })
         
         if not videos:
-            videos = [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
+            for i in range(limit):
+                videos.append({
+                    'title': f'Video {i+1}',
+                    'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}',
+                    'has_video': True
+                })
         
         return videos
     except Exception as e:
         print(f"❌ Video fetch error: {e}")
-        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}'} for i in range(limit)]
+        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}', 'has_video': True} for i in range(limit)]
+
+def send_direct_video(chat_id, video_url, caption):
+    """Send direct video using Bot API - downloads and sends as video"""
+    try:
+        # Download video from URL
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(video_url, headers=headers, timeout=30, stream=True)
+        
+        if response.status_code == 200:
+            # Send as video
+            video_data = response.content
+            bot.send_video(chat_id, video_data, caption=caption, supports_streaming=True)
+            return True
+        else:
+            # If download fails, send as link
+            bot.send_message(chat_id, f"📹 {caption}\n[Click to Watch]({video_url})", parse_mode='Markdown')
+            return False
+    except Exception as e:
+        print(f"❌ Send video error: {e}")
+        # Fallback: send as link
+        try:
+            bot.send_message(chat_id, f"📹 {caption}\n[Click to Watch]({video_url})", parse_mode='Markdown')
+        except:
+            pass
+        return False
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest videos to user"""
+    """Send latest videos directly to user"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -321,20 +357,29 @@ def send_videos_to_user(chat_id, user_id):
     
     loading = bot.send_message(chat_id, "📹 Fetching latest videos...")
     
-    videos = get_channel_videos(10)
+    videos = get_video_url_from_channel(10)
     
     if not videos:
         bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
         return
     
-    text = "📹 **LATEST VIDEOS**\n\n"
-    for i, video in enumerate(videos, 1):
-        text += f"{i}. {video['title']}\n"
-        if video.get('link'):
-            text += f"   🔗 [Watch Video]({video['link']})\n"
+    bot.edit_message_text("📹 **Sending videos...**", chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
     
-    text += f"\n📌 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})"
-    bot.edit_message_text(text, chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
+    for i, video in enumerate(videos, 1):
+        if video.get('link') and video.get('has_video'):
+            try:
+                # Try to send direct video
+                caption = f"📹 Video {i}\n{video['title']}"
+                bot.send_video(chat_id, video['link'], caption=caption, supports_streaming=True)
+                time.sleep(1)
+            except Exception as e:
+                print(f"❌ Error sending video {i}: {e}")
+                # Fallback to link
+                bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
+        else:
+            bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
+    
+    bot.send_message(chat_id, f"📌 **All videos sent!**\n🔹 [@{VIDEO_CHANNEL}](https://t.me/{VIDEO_CHANNEL})", parse_mode='Markdown')
 
 # ==================== BOT COMMANDS ====================
 
@@ -368,10 +413,7 @@ def start(message):
             time_str = "Unknown"
         
         bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str}\n\n📹 Sending latest videos...")
-        
-        # Auto send videos
         send_videos_to_user(message.chat.id, user_id)
-        
     else:
         markup = types.InlineKeyboardMarkup(row_width=1)
         link = db.get_setting('free_token_link') or 'https://t.me/latestvideo10'
@@ -460,7 +502,6 @@ def redeem_token(message):
     success, msg, hours = db.redeem_token(token, user_id, device_id)
     bot.reply_to(message, msg)
     if success:
-        # Auto send videos after successful redeem
         send_videos_to_user(message.chat.id, user_id)
 
 @bot.message_handler(commands=['tokeninfo'])
@@ -541,7 +582,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - NO TELEGON                           ║
+    ║   📹 TOKEN VIDEO BOT - DIRECT VIDEO IN CHAT                 ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
