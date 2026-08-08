@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FIRST VIDEO FIXED
+📹 TOKEN VIDEO BOT - FAILED VIDEO SKIP (NO LINKS)
 """
 
 import os
@@ -340,7 +340,6 @@ print("[*] Database ready!")
 
 # ==================== VIDEO FETCHER ====================
 def get_channel_videos(limit=10):
-    """Get latest video links from channel"""
     videos = []
     try:
         url = f"https://t.me/s/{VIDEO_CHANNEL}"
@@ -386,7 +385,7 @@ def get_channel_videos(limit=10):
         return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}', 'video_id': f'video_{i+1}', 'has_video': True} for i in range(limit)]
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest videos directly to user - FIXED"""
+    """Send latest videos - failed videos show 'Video X Failed'"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -418,15 +417,18 @@ def send_videos_to_user(chat_id, user_id):
     msg = bot.edit_message_text("📹 **Sending videos...**", chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
     add_message_to_delete(chat_id, msg.message_id)
     
+    failed_count = 0
+    
     for i, video in enumerate(new_videos[:10], 1):
         try:
             caption = f"📹 Video {i}\n{video['title']}"
             
-            # DIRECT VIDEO SEND - With retry
-            video_msg = None
+            # Try sending video
+            video_sent = False
+            
+            # Try 3 attempts
             for attempt in range(3):
                 try:
-                    # Try sending as video directly
                     video_msg = bot.send_video(
                         chat_id, 
                         video['link'], 
@@ -434,33 +436,38 @@ def send_videos_to_user(chat_id, user_id):
                         supports_streaming=True,
                         timeout=30
                     )
+                    video_sent = True
+                    add_message_to_delete(chat_id, video_msg.message_id)
+                    db.mark_video_sent(video['video_id'], user_id)
+                    db.set_last_video_id(video['video_id'])
+                    print(f"✅ Video {i} sent successfully")
                     break
                 except Exception as e:
                     print(f"❌ Attempt {attempt+1} failed for video {i}: {e}")
                     time.sleep(2)
             
-            if video_msg:
-                add_message_to_delete(chat_id, video_msg.message_id)
-                db.mark_video_sent(video['video_id'], user_id)
-                db.set_last_video_id(video['video_id'])
-            else:
-                # Fallback: send as document
-                try:
-                    video_msg = bot.send_document(chat_id, video['link'], caption=caption)
-                    add_message_to_delete(chat_id, video_msg.message_id)
-                    db.mark_video_sent(video['video_id'], user_id)
-                except Exception as e:
-                    print(f"❌ Fallback failed for video {i}: {e}")
-                    # Final fallback: send link
-                    msg = bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
-                    add_message_to_delete(chat_id, msg.message_id)
+            if not video_sent:
+                # Video failed - send failure message (NO LINK)
+                failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
+                add_message_to_delete(chat_id, failed_msg.message_id)
+                failed_count += 1
             
-            time.sleep(1)
+            time.sleep(0.5)
             
         except Exception as e:
             print(f"❌ Error sending video {i}: {e}")
-            msg = bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
-            add_message_to_delete(chat_id, msg.message_id)
+            failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
+            add_message_to_delete(chat_id, failed_msg.message_id)
+            failed_count += 1
+    
+    # Summary message (NO CHANNEL LINK)
+    if failed_count > 0:
+        summary = f"📊 **{len(new_videos[:10]) - failed_count} videos sent, {failed_count} failed.**"
+    else:
+        summary = f"✅ **All {len(new_videos[:10])} videos sent successfully!**"
+    
+    msg = bot.send_message(chat_id, summary, parse_mode='Markdown')
+    add_message_to_delete(chat_id, msg.message_id)
 
 # ==================== BOT COMMANDS ====================
 
@@ -692,7 +699,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - FIRST VIDEO FIXED                   ║
+    ║   📹 TOKEN VIDEO BOT - FAILED VIDEO SKIP                   ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
