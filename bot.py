@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - FAILED VIDEO SKIP (NO LINKS)
+📹 TOKEN VIDEO BOT - REAL-TIME LATEST VIDEOS
+Always fetches latest 10 videos from channel
 """
 
 import os
@@ -139,21 +140,12 @@ class Database:
                 )
             ''')
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS sent_videos (
-                    id SERIAL PRIMARY KEY,
-                    video_id TEXT,
-                    sent_to INTEGER,
-                    sent_at TIMESTAMP DEFAULT NOW()
-                )
-            ''')
-            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
             ''')
             cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
-            cursor.execute("INSERT INTO settings (key, value) VALUES ('last_video_id', '') ON CONFLICT (key) DO NOTHING")
             self.conn.commit()
             print("✅ Tables ready!")
         except Exception as e:
@@ -309,30 +301,6 @@ class Database:
             self.execute_query('UPDATE settings SET value = %s WHERE key = %s', (value, key))
         except Exception as e:
             print(f"❌ set_setting error: {e}")
-    
-    def mark_video_sent(self, video_id, user_id):
-        try:
-            self.execute_query('''
-                INSERT INTO sent_videos (video_id, sent_to, sent_at)
-                VALUES (%s, %s, NOW())
-            ''', (video_id, user_id))
-        except Exception as e:
-            print(f"❌ mark_video_sent error: {e}")
-    
-    def is_video_sent(self, video_id, user_id):
-        try:
-            result = self.fetch_one('SELECT id FROM sent_videos WHERE video_id = %s AND sent_to = %s', (video_id, user_id))
-            return result is not None
-        except Exception as e:
-            print(f"❌ is_video_sent error: {e}")
-            return False
-    
-    def get_last_video_id(self):
-        result = self.fetch_one('SELECT value FROM settings WHERE key = %s', ('last_video_id',))
-        return result[0] if result else None
-    
-    def set_last_video_id(self, video_id):
-        self.set_setting('last_video_id', video_id)
 
 # ==================== INIT DATABASE ====================
 db = Database()
@@ -340,6 +308,7 @@ print("[*] Database ready!")
 
 # ==================== VIDEO FETCHER ====================
 def get_channel_videos(limit=10):
+    """Get latest video links from channel - ALWAYS FRESH"""
     videos = []
     try:
         url = f"https://t.me/s/{VIDEO_CHANNEL}"
@@ -385,7 +354,7 @@ def get_channel_videos(limit=10):
         return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}', 'video_id': f'video_{i+1}', 'has_video': True} for i in range(limit)]
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest videos - failed videos show 'Video X Failed'"""
+    """Send latest 10 videos from channel - ALWAYS FRESH"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -396,6 +365,7 @@ def send_videos_to_user(chat_id, user_id):
     loading = bot.send_message(chat_id, "📹 Fetching latest videos...")
     add_message_to_delete(chat_id, loading.message_id)
     
+    # ALWAYS fetch fresh videos - no cache
     videos = get_channel_videos(10)
     
     if not videos:
@@ -403,31 +373,20 @@ def send_videos_to_user(chat_id, user_id):
         add_message_to_delete(chat_id, msg.message_id)
         return
     
-    # Filter new videos
-    new_videos = []
-    for v in videos:
-        if not db.is_video_sent(v['video_id'], user_id):
-            new_videos.append(v)
-    
-    if not new_videos:
-        msg = bot.edit_message_text("✅ No new videos available.", chat_id=chat_id, message_id=loading.message_id)
-        add_message_to_delete(chat_id, msg.message_id)
-        return
-    
-    msg = bot.edit_message_text("📹 **Sending videos...**", chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
+    msg = bot.edit_message_text(f"📹 **Sending {len(videos)} latest videos...**", chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
     add_message_to_delete(chat_id, msg.message_id)
     
     failed_count = 0
+    sent_count = 0
     
-    for i, video in enumerate(new_videos[:10], 1):
+    for i, video in enumerate(videos, 1):
         try:
             caption = f"📹 Video {i}\n{video['title']}"
             
-            # Try sending video
+            # Try sending video with retry
             video_sent = False
             
-            # Try 3 attempts
-            for attempt in range(3):
+            for attempt in range(2):
                 try:
                     video_msg = bot.send_video(
                         chat_id, 
@@ -438,8 +397,7 @@ def send_videos_to_user(chat_id, user_id):
                     )
                     video_sent = True
                     add_message_to_delete(chat_id, video_msg.message_id)
-                    db.mark_video_sent(video['video_id'], user_id)
-                    db.set_last_video_id(video['video_id'])
+                    sent_count += 1
                     print(f"✅ Video {i} sent successfully")
                     break
                 except Exception as e:
@@ -447,7 +405,6 @@ def send_videos_to_user(chat_id, user_id):
                     time.sleep(2)
             
             if not video_sent:
-                # Video failed - send failure message (NO LINK)
                 failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
                 add_message_to_delete(chat_id, failed_msg.message_id)
                 failed_count += 1
@@ -460,11 +417,11 @@ def send_videos_to_user(chat_id, user_id):
             add_message_to_delete(chat_id, failed_msg.message_id)
             failed_count += 1
     
-    # Summary message (NO CHANNEL LINK)
+    # Summary
     if failed_count > 0:
-        summary = f"📊 **{len(new_videos[:10]) - failed_count} videos sent, {failed_count} failed.**"
+        summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**"
     else:
-        summary = f"✅ **All {len(new_videos[:10])} videos sent successfully!**"
+        summary = f"✅ **All {sent_count} videos sent successfully!**"
     
     msg = bot.send_message(chat_id, summary, parse_mode='Markdown')
     add_message_to_delete(chat_id, msg.message_id)
@@ -699,7 +656,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - FAILED VIDEO SKIP                   ║
+    ║   📹 TOKEN VIDEO BOT - REAL-TIME LATEST VIDEOS             ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
