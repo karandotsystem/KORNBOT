@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - REAL-TIME LATEST VIDEOS
-Always fetches latest 10 videos from channel
+📹 TOKEN VIDEO BOT - FRESH FETCH (NO CACHE)
+Always fetches latest videos directly from channel
 """
 
 import os
@@ -306,24 +306,33 @@ class Database:
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FETCHER ====================
+# ==================== VIDEO FETCHER - FRESH ====================
 def get_channel_videos(limit=10):
-    """Get latest video links from channel - ALWAYS FRESH"""
+    """Get latest video links from channel - ALWAYS FRESH, NO CACHE"""
     videos = []
     try:
+        # Clear any cache by using unique headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+        }
         url = f"https://t.me/s/{VIDEO_CHANNEL}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code == 200:
             html = response.text
             
+            # Find message links
             pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
             matches = re.findall(pattern, html)
             
+            # Find message texts
             title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
             titles = re.findall(title_pattern, html)
             
+            # Check for media (videos)
             has_media_pattern = r'class="tgme_widget_message_photo_wrap"'
             has_media = re.findall(has_media_pattern, html)
             
@@ -339,19 +348,40 @@ def get_channel_videos(limit=10):
                     'has_video': has_video
                 })
         
+        # If no videos found via scraping, try direct API approach
         if not videos:
-            for i in range(limit):
-                videos.append({
-                    'title': f'Video {i+1}',
-                    'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}',
-                    'video_id': f'video_{i+1}',
-                    'has_video': True
-                })
+            print("[!] No videos found via scraping, trying alternative...")
+            # Try to get via public channel link
+            alt_url = f"https://t.me/{VIDEO_CHANNEL}"
+            alt_response = requests.get(alt_url, headers=headers, timeout=15)
+            if alt_response.status_code == 200:
+                html = alt_response.text
+                # Look for message links
+                pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
+                matches = re.findall(pattern, html)
+                for i in range(min(limit, len(matches))):
+                    link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
+                    videos.append({
+                        'title': f'Video {i+1}',
+                        'link': link,
+                        'video_id': matches[i] if i < len(matches) else f'video_{i}',
+                        'has_video': True
+                    })
         
-        return videos
+        # If STILL no videos, return empty
+        if not videos:
+            print("[!] No videos found in channel")
+            return []
+        
+        # Filter out videos without links
+        videos = [v for v in videos if v.get('link')]
+        
+        # Return only videos with actual content
+        return videos[:limit]
+        
     except Exception as e:
         print(f"❌ Video fetch error: {e}")
-        return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}', 'video_id': f'video_{i+1}', 'has_video': True} for i in range(limit)]
+        return []
 
 def send_videos_to_user(chat_id, user_id):
     """Send latest 10 videos from channel - ALWAYS FRESH"""
@@ -365,11 +395,11 @@ def send_videos_to_user(chat_id, user_id):
     loading = bot.send_message(chat_id, "📹 Fetching latest videos...")
     add_message_to_delete(chat_id, loading.message_id)
     
-    # ALWAYS fetch fresh videos - no cache
+    # ALWAYS fetch fresh videos - NO CACHE
     videos = get_channel_videos(10)
     
     if not videos:
-        msg = bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
+        msg = bot.edit_message_text("❌ No videos found in channel.", chat_id=chat_id, message_id=loading.message_id)
         add_message_to_delete(chat_id, msg.message_id)
         return
     
@@ -398,7 +428,7 @@ def send_videos_to_user(chat_id, user_id):
                     video_sent = True
                     add_message_to_delete(chat_id, video_msg.message_id)
                     sent_count += 1
-                    print(f"✅ Video {i} sent successfully")
+                    print(f"✅ Video {i} sent successfully: {video['link']}")
                     break
                 except Exception as e:
                     print(f"❌ Attempt {attempt+1} failed for video {i}: {e}")
@@ -656,7 +686,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - REAL-TIME LATEST VIDEOS             ║
+    ║   📹 TOKEN VIDEO BOT - FRESH FETCH (NO CACHE)              ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
