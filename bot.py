@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - SEQUENTIAL VIDEO SYSTEM
-Starts from 12, updates every 12 hours
+📹 TOKEN VIDEO BOT - NO CHANNEL LINKS
 """
 
 import os
@@ -23,7 +22,7 @@ VIDEO_CHANNEL = "latestvideo10"
 DELETE_AFTER_MINUTES = 10
 
 # ==================== SEQUENTIAL VIDEO SYSTEM ====================
-START_VIDEO_ID = 12  # Starting from 12
+START_VIDEO_ID = 12
 VIDEOS_PER_BATCH = 10
 UPDATE_INTERVAL_HOURS = 12
 
@@ -333,8 +332,6 @@ def get_sequential_videos():
     videos = []
     current_start = db.get_current_start()
     
-    print(f"[*] Current start: {current_start}")
-    
     for i in range(VIDEOS_PER_BATCH):
         video_id = current_start + i
         link = f"https://t.me/{VIDEO_CHANNEL}/{video_id}"
@@ -342,14 +339,11 @@ def get_sequential_videos():
             'title': f'Video {i+1}',
             'link': link,
             'video_id': video_id,
-            'has_video': True
         })
     
-    print(f"[*] Generated {len(videos)} videos: {current_start} to {current_start + VIDEOS_PER_BATCH - 1}")
     return videos
 
 def update_video_batch():
-    """Update to next batch after 12 hours"""
     current_start = db.get_current_start()
     new_start = current_start + VIDEOS_PER_BATCH
     db.update_current_start(new_start)
@@ -357,7 +351,7 @@ def update_video_batch():
     return new_start
 
 def send_videos_to_user(chat_id, user_id):
-    """Send sequential videos to user"""
+    """Send sequential videos to user - NO CHANNEL LINKS"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -378,7 +372,7 @@ def send_videos_to_user(chat_id, user_id):
     current_start = db.get_current_start()
     msg = bot.edit_message_text(
         f"📹 **Sending videos {current_start} to {current_start + VIDEOS_PER_BATCH - 1}**\n"
-        f"⏱ Batch updates every {UPDATE_INTERVAL_HOURS}h",
+        f"⏱ Updates every {UPDATE_INTERVAL_HOURS}h",
         chat_id=chat_id,
         message_id=loading.message_id,
         parse_mode='Markdown'
@@ -390,7 +384,8 @@ def send_videos_to_user(chat_id, user_id):
     
     for i, video in enumerate(videos, 1):
         try:
-            caption = f"📹 Video {i}\n{video['link']}"
+            # NO CHANNEL LINK IN CAPTION
+            caption = f"📹 Video {i}"
             
             video_sent = False
             for attempt in range(2):
@@ -405,7 +400,6 @@ def send_videos_to_user(chat_id, user_id):
                     video_sent = True
                     add_message_to_delete(chat_id, video_msg.message_id)
                     sent_count += 1
-                    print(f"✅ Video {i} sent: {video['link']}")
                     break
                 except Exception as e:
                     print(f"❌ Attempt {attempt+1} failed: {e}")
@@ -424,7 +418,11 @@ def send_videos_to_user(chat_id, user_id):
             add_message_to_delete(chat_id, failed_msg.message_id)
             failed_count += 1
     
-    summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**" if failed_count > 0 else f"✅ **All {sent_count} videos sent successfully!**"
+    # NO CHANNEL LINK IN SUMMARY
+    if failed_count > 0:
+        summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**"
+    else:
+        summary = f"✅ **All {sent_count} videos sent successfully!**"
     summary += f"\n⏱ Next batch in {UPDATE_INTERVAL_HOURS}h"
     
     msg = bot.send_message(chat_id, summary, parse_mode='Markdown')
@@ -432,17 +430,14 @@ def send_videos_to_user(chat_id, user_id):
 
 # ==================== SCHEDULED UPDATE ====================
 def schedule_video_update():
-    """Background thread to update video batch every 12 hours"""
     while True:
         time.sleep(UPDATE_INTERVAL_HOURS * 3600)
         new_start = update_video_batch()
-        # Notify owner
         try:
             bot.send_message(
                 OWNER_ID,
                 f"🔄 **Video batch updated!**\n"
-                f"New videos: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}\n"
-                f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h"
+                f"New videos: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}"
             )
         except:
             pass
@@ -471,7 +466,6 @@ def start(message):
         msg = bot.reply_to(message, "👑 **WELCOME BOSS!**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
         
-        # Send current status
         current = db.get_current_start()
         bot.send_message(
             user_id,
@@ -591,8 +585,7 @@ def next_batch(message):
     msg = bot.reply_to(message, 
         f"🔄 **Batch updated!**\n"
         f"Old: {old_start} to {old_start + VIDEOS_PER_BATCH - 1}\n"
-        f"New: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}\n"
-        f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h",
+        f"New: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}",
         parse_mode='Markdown')
     add_message_to_delete(message.chat.id, msg.message_id)
 
@@ -710,9 +703,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - SEQUENTIAL VIDEO SYSTEM              ║
-    ║   Start: 12 → 22 → 33 → 42...                              ║
-    ║   Updates every 12 hours                                   ║
+    ║   📹 TOKEN VIDEO BOT - NO CHANNEL LINKS                     ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
