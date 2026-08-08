@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - AUTO DELETE + DAILY NEW VIDEOS
+📹 TOKEN VIDEO BOT - FIRST VIDEO FIXED
 """
 
 import os
@@ -43,26 +43,20 @@ except:
 messages_to_delete = {}
 
 def add_message_to_delete(chat_id, message_id, delay_minutes=DELETE_AFTER_MINUTES):
-    """Add message to delete queue"""
     if chat_id not in messages_to_delete:
         messages_to_delete[chat_id] = []
     delete_time = datetime.now() + timedelta(minutes=delay_minutes)
     messages_to_delete[chat_id].append((message_id, delete_time))
-    
-    # Schedule deletion
     threading.Thread(target=delete_message_after_delay, args=(chat_id, message_id, delay_minutes), daemon=True).start()
 
 def delete_message_after_delay(chat_id, message_id, delay_minutes):
-    """Delete message after delay"""
     time.sleep(delay_minutes * 60)
     try:
         bot.delete_message(chat_id, message_id)
-        print(f"[+] Deleted message {message_id} in chat {chat_id}")
-    except Exception as e:
-        print(f"[-] Could not delete message {message_id}: {e}")
+    except:
+        pass
 
 def delete_old_messages():
-    """Background thread to clean old messages"""
     while True:
         time.sleep(60)
         now = datetime.now()
@@ -74,7 +68,6 @@ def delete_old_messages():
                 else:
                     try:
                         bot.delete_message(chat_id, msg_id)
-                        print(f"[+] Deleted old message {msg_id}")
                     except:
                         pass
             if remaining:
@@ -393,7 +386,7 @@ def get_channel_videos(limit=10):
         return [{'title': f'Video {i+1}', 'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}', 'video_id': f'video_{i+1}', 'has_video': True} for i in range(limit)]
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest videos directly to user"""
+    """Send latest videos directly to user - FIXED"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -410,9 +403,6 @@ def send_videos_to_user(chat_id, user_id):
         msg = bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
         add_message_to_delete(chat_id, msg.message_id)
         return
-    
-    # Get last video ID sent to this user
-    last_video_id = db.get_last_video_id()
     
     # Filter new videos
     new_videos = []
@@ -431,13 +421,42 @@ def send_videos_to_user(chat_id, user_id):
     for i, video in enumerate(new_videos[:10], 1):
         try:
             caption = f"📹 Video {i}\n{video['title']}"
-            video_msg = bot.send_video(chat_id, video['link'], caption=caption, supports_streaming=True)
-            add_message_to_delete(chat_id, video_msg.message_id)
             
-            # Mark as sent
-            db.mark_video_sent(video['video_id'], user_id)
-            db.set_last_video_id(video['video_id'])
+            # DIRECT VIDEO SEND - With retry
+            video_msg = None
+            for attempt in range(3):
+                try:
+                    # Try sending as video directly
+                    video_msg = bot.send_video(
+                        chat_id, 
+                        video['link'], 
+                        caption=caption, 
+                        supports_streaming=True,
+                        timeout=30
+                    )
+                    break
+                except Exception as e:
+                    print(f"❌ Attempt {attempt+1} failed for video {i}: {e}")
+                    time.sleep(2)
+            
+            if video_msg:
+                add_message_to_delete(chat_id, video_msg.message_id)
+                db.mark_video_sent(video['video_id'], user_id)
+                db.set_last_video_id(video['video_id'])
+            else:
+                # Fallback: send as document
+                try:
+                    video_msg = bot.send_document(chat_id, video['link'], caption=caption)
+                    add_message_to_delete(chat_id, video_msg.message_id)
+                    db.mark_video_sent(video['video_id'], user_id)
+                except Exception as e:
+                    print(f"❌ Fallback failed for video {i}: {e}")
+                    # Final fallback: send link
+                    msg = bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
+                    add_message_to_delete(chat_id, msg.message_id)
+            
             time.sleep(1)
+            
         except Exception as e:
             print(f"❌ Error sending video {i}: {e}")
             msg = bot.send_message(chat_id, f"📹 **Video {i}:** {video['title']}\n[Watch Here]({video['link']})", parse_mode='Markdown')
@@ -673,7 +692,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - AUTO DELETE + DAILY NEW VIDEOS       ║
+    ║   📹 TOKEN VIDEO BOT - FIRST VIDEO FIXED                   ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
