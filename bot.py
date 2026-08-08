@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - CHANNEL FETCH FIXED
+📹 TOKEN VIDEO BOT - SEQUENTIAL VIDEO SYSTEM
+Starts from 12, updates every 12 hours
 """
 
 import os
@@ -10,7 +11,6 @@ import random
 import string
 import pg8000
 import requests
-import re
 import threading
 from datetime import datetime, timedelta
 import telebot
@@ -21,6 +21,11 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 VIDEO_CHANNEL = "latestvideo10"
 DELETE_AFTER_MINUTES = 10
+
+# ==================== SEQUENTIAL VIDEO SYSTEM ====================
+START_VIDEO_ID = 12  # Starting from 12
+VIDEOS_PER_BATCH = 10
+UPDATE_INTERVAL_HOURS = 12
 
 # ==================== DATABASE CONNECTION ====================
 DB_HOST = "reseau.proxy.rlwy.net"
@@ -139,12 +144,20 @@ class Database:
                 )
             ''')
             cursor.execute('''
+                CREATE TABLE IF NOT EXISTS video_tracker (
+                    id SERIAL PRIMARY KEY,
+                    current_start INTEGER DEFAULT 12,
+                    last_updated TIMESTAMP DEFAULT NOW()
+                )
+            ''')
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
             ''')
             cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
+            cursor.execute("INSERT INTO video_tracker (current_start) VALUES (12) ON CONFLICT DO NOTHING")
             self.conn.commit()
             print("✅ Tables ready!")
         except Exception as e:
@@ -300,116 +313,51 @@ class Database:
             self.execute_query('UPDATE settings SET value = %s WHERE key = %s', (value, key))
         except Exception as e:
             print(f"❌ set_setting error: {e}")
+    
+    def get_current_start(self):
+        result = self.fetch_one('SELECT current_start FROM video_tracker ORDER BY id DESC LIMIT 1')
+        if result:
+            return result[0]
+        return 12
+    
+    def update_current_start(self, new_start):
+        self.execute_query('UPDATE video_tracker SET current_start = %s, last_updated = NOW()', (new_start,))
 
 # ==================== INIT DATABASE ====================
 db = Database()
 print("[*] Database ready!")
 
-# ==================== VIDEO FETCHER - DIRECT CHANNEL ====================
-def get_channel_videos(limit=10):
-    """Get latest video links from channel - DIRECT FETCH"""
+# ==================== VIDEO FETCHER - SEQUENTIAL ====================
+def get_sequential_videos():
+    """Get videos based on sequential system"""
     videos = []
-    try:
-        # Try both URL formats
-        urls = [
-            f"https://t.me/{VIDEO_CHANNEL}",
-            f"https://t.me/s/{VIDEO_CHANNEL}"
-        ]
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-        }
-        
-        for url in urls:
-            print(f"[*] Trying: {url}")
-            response = requests.get(url, headers=headers, timeout=15)
-            
-            if response.status_code == 200:
-                html = response.text
-                
-                # Find message links
-                pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
-                matches = re.findall(pattern, html)
-                
-                # Find message texts
-                title_pattern = r'<div class="tgme_widget_message_text[^"]*">([^<]+)</div>'
-                titles = re.findall(title_pattern, html)
-                
-                # Check for media (videos)
-                has_media_pattern = r'class="tgme_widget_message_photo_wrap"'
-                has_media = re.findall(has_media_pattern, html)
-                
-                print(f"[*] Found {len(matches)} messages, {len(has_media)} with media")
-                
-                for i in range(min(limit, len(matches))):
-                    link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
-                    title = titles[i].replace('<b>', '').replace('</b>', '').strip()[:50] if i < len(titles) else f"Video {i+1}"
-                    video_id = matches[i] if i < len(matches) else f"video_{i}"
-                    has_video = i < len(has_media)
-                    videos.append({
-                        'title': title,
-                        'link': link,
-                        'video_id': video_id,
-                        'has_video': has_video
-                    })
-                
-                # If found videos, break
-                if videos:
-                    break
-        
-        # If no videos found, try alternative scraping
-        if not videos:
-            print("[!] No videos found, trying alternative method...")
-            # Try to get via channel ID using Bot API
-            try:
-                channel_info = bot.get_chat(f"@{VIDEO_CHANNEL}")
-                print(f"[*] Channel found: {channel_info.title}")
-                
-                # If channel exists but no videos, return sample with proper links
-                for i in range(limit):
-                    videos.append({
-                        'title': f'Video {i+1}',
-                        'link': f'https://t.me/{VIDEO_CHANNEL}/{i+1}',
-                        'video_id': f'video_{i+1}',
-                        'has_video': True
-                    })
-            except Exception as e:
-                print(f"[-] Bot API error: {e}")
-                # Try one more time with different user agent
-                try:
-                    alt_url = f"https://t.me/s/{VIDEO_CHANNEL}"
-                    alt_response = requests.get(alt_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-                    if alt_response.status_code == 200:
-                        html = alt_response.text
-                        pattern = r'<a class="tgme_widget_message_date" href="/([^"]+)"'
-                        matches = re.findall(pattern, html)
-                        for i in range(min(limit, len(matches))):
-                            link = f"https://t.me/{matches[i]}" if i < len(matches) else ""
-                            videos.append({
-                                'title': f'Video {i+1}',
-                                'link': link,
-                                'video_id': matches[i] if i < len(matches) else f'video_{i}',
-                                'has_video': True
-                            })
-                except:
-                    pass
-        
-        # Filter videos with links
-        videos = [v for v in videos if v.get('link') and v.get('link').startswith('https://t.me/')]
-        
-        print(f"[*] Final videos found: {len(videos)}")
-        return videos[:limit]
-        
-    except Exception as e:
-        print(f"❌ Video fetch error: {e}")
-        return []
+    current_start = db.get_current_start()
+    
+    print(f"[*] Current start: {current_start}")
+    
+    for i in range(VIDEOS_PER_BATCH):
+        video_id = current_start + i
+        link = f"https://t.me/{VIDEO_CHANNEL}/{video_id}"
+        videos.append({
+            'title': f'Video {i+1}',
+            'link': link,
+            'video_id': video_id,
+            'has_video': True
+        })
+    
+    print(f"[*] Generated {len(videos)} videos: {current_start} to {current_start + VIDEOS_PER_BATCH - 1}")
+    return videos
+
+def update_video_batch():
+    """Update to next batch after 12 hours"""
+    current_start = db.get_current_start()
+    new_start = current_start + VIDEOS_PER_BATCH
+    db.update_current_start(new_start)
+    print(f"[*] Updated batch: {current_start} → {new_start}")
+    return new_start
 
 def send_videos_to_user(chat_id, user_id):
-    """Send latest 10 videos from channel"""
+    """Send sequential videos to user"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -420,14 +368,21 @@ def send_videos_to_user(chat_id, user_id):
     loading = bot.send_message(chat_id, "📹 Fetching latest videos...")
     add_message_to_delete(chat_id, loading.message_id)
     
-    videos = get_channel_videos(10)
+    videos = get_sequential_videos()
     
     if not videos:
-        msg = bot.edit_message_text("❌ No videos found in channel.", chat_id=chat_id, message_id=loading.message_id)
+        msg = bot.edit_message_text("❌ No videos found.", chat_id=chat_id, message_id=loading.message_id)
         add_message_to_delete(chat_id, msg.message_id)
         return
     
-    msg = bot.edit_message_text(f"📹 **Sending {len(videos)} latest videos...**", chat_id=chat_id, message_id=loading.message_id, parse_mode='Markdown')
+    current_start = db.get_current_start()
+    msg = bot.edit_message_text(
+        f"📹 **Sending videos {current_start} to {current_start + VIDEOS_PER_BATCH - 1}**\n"
+        f"⏱ Batch updates every {UPDATE_INTERVAL_HOURS}h",
+        chat_id=chat_id,
+        message_id=loading.message_id,
+        parse_mode='Markdown'
+    )
     add_message_to_delete(chat_id, msg.message_id)
     
     failed_count = 0
@@ -435,16 +390,15 @@ def send_videos_to_user(chat_id, user_id):
     
     for i, video in enumerate(videos, 1):
         try:
-            caption = f"📹 Video {i}\n{video['title']}"
+            caption = f"📹 Video {i}\n{video['link']}"
             
             video_sent = False
-            
             for attempt in range(2):
                 try:
                     video_msg = bot.send_video(
-                        chat_id, 
-                        video['link'], 
-                        caption=caption, 
+                        chat_id,
+                        video['link'],
+                        caption=caption,
                         supports_streaming=True,
                         timeout=30
                     )
@@ -471,11 +425,32 @@ def send_videos_to_user(chat_id, user_id):
             failed_count += 1
     
     summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**" if failed_count > 0 else f"✅ **All {sent_count} videos sent successfully!**"
+    summary += f"\n⏱ Next batch in {UPDATE_INTERVAL_HOURS}h"
     
     msg = bot.send_message(chat_id, summary, parse_mode='Markdown')
     add_message_to_delete(chat_id, msg.message_id)
 
+# ==================== SCHEDULED UPDATE ====================
+def schedule_video_update():
+    """Background thread to update video batch every 12 hours"""
+    while True:
+        time.sleep(UPDATE_INTERVAL_HOURS * 3600)
+        new_start = update_video_batch()
+        # Notify owner
+        try:
+            bot.send_message(
+                OWNER_ID,
+                f"🔄 **Video batch updated!**\n"
+                f"New videos: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}\n"
+                f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h"
+            )
+        except:
+            pass
+
+threading.Thread(target=schedule_video_update, daemon=True).start()
+
 # ==================== BOT COMMANDS ====================
+
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
@@ -490,10 +465,19 @@ def start(message):
         markup.add(
             types.InlineKeyboardButton("🔑 Create Token", callback_data="owner_create"),
             types.InlineKeyboardButton("📋 My Tokens", callback_data="owner_tokens"),
-            types.InlineKeyboardButton("🔗 Change Free Link", callback_data="owner_link")
+            types.InlineKeyboardButton("🔗 Change Free Link", callback_data="owner_link"),
+            types.InlineKeyboardButton("🔄 Next Batch", callback_data="owner_next_batch")
         )
         msg = bot.reply_to(message, "👑 **WELCOME BOSS!**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
+        
+        # Send current status
+        current = db.get_current_start()
+        bot.send_message(
+            user_id,
+            f"📊 **Current Batch:** {current} to {current + VIDEOS_PER_BATCH - 1}\n"
+            f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h"
+        )
         return
     
     is_active = db.check_user_active(user_id)
@@ -594,6 +578,24 @@ def list_tokens(message):
     msg = bot.reply_to(message, text, parse_mode='Markdown')
     add_message_to_delete(message.chat.id, msg.message_id)
 
+@bot.message_handler(commands=['nextbatch'])
+def next_batch(message):
+    if message.from_user.id != OWNER_ID:
+        msg = bot.reply_to(message, "❌ Owner only.")
+        add_message_to_delete(message.chat.id, msg.message_id)
+        return
+    
+    old_start = db.get_current_start()
+    new_start = update_video_batch()
+    
+    msg = bot.reply_to(message, 
+        f"🔄 **Batch updated!**\n"
+        f"Old: {old_start} to {old_start + VIDEOS_PER_BATCH - 1}\n"
+        f"New: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}\n"
+        f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h",
+        parse_mode='Markdown')
+    add_message_to_delete(message.chat.id, msg.message_id)
+
 # ===== USER COMMANDS =====
 
 @bot.message_handler(commands=['redeem'])
@@ -667,6 +669,10 @@ def handle_callback(call):
         msg = bot.send_message(call.message.chat.id, "📌 /change [LINK]")
         add_message_to_delete(call.message.chat.id, msg.message_id)
     
+    elif call.data == "owner_next_batch":
+        bot.answer_callback_query(call.id)
+        next_batch(call.message)
+    
     elif call.data == "user_redeem":
         bot.answer_callback_query(call.id)
         msg = bot.send_message(call.message.chat.id, "🔑 Enter token:")
@@ -688,7 +694,7 @@ def process_redeem(message):
 @bot.message_handler(commands=['help'])
 def help_command(message):
     if message.from_user.id == OWNER_ID:
-        text = "👑 **OWNER HELP**\n\n/create [HOURS] [LIMIT]\n/tokens\n/change [LINK]\n/videos"
+        text = "👑 **OWNER HELP**\n\n/create [HOURS] [LIMIT]\n/tokens\n/change [LINK]\n/nextbatch\n/videos"
     else:
         text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos\n/tokeninfo"
     
@@ -704,12 +710,16 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - CHANNEL FETCH FIXED                  ║
+    ║   📹 TOKEN VIDEO BOT - SEQUENTIAL VIDEO SYSTEM              ║
+    ║   Start: 12 → 22 → 33 → 42...                              ║
+    ║   Updates every 12 hours                                   ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
     print(f"✅ Video Channel: @{VIDEO_CHANNEL}")
-    print(f"✅ Auto Delete: {DELETE_AFTER_MINUTES} minutes")
+    print(f"✅ Start ID: {START_VIDEO_ID}")
+    print(f"✅ Videos per batch: {VIDEOS_PER_BATCH}")
+    print(f"✅ Update interval: {UPDATE_INTERVAL_HOURS}h")
     print(f"✅ Bot starting...")
     
     while True:
