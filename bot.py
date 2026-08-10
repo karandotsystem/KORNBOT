@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-✨ KORN VIDEOS KING - FIXED 409 + REDEEM ✨
+✨ KORN VIDEOS KING - NO LOGGING (Railway Rate Limit Fix) ✨
 """
 
 import os
 import time
-import logging
 import random
 import string
 import pg8000
@@ -13,6 +12,11 @@ import threading
 from datetime import datetime, timedelta
 import telebot
 from telebot import types
+
+# ==================== DISABLE ALL LOGGING ====================
+import logging
+logging.disable(logging.CRITICAL)
+os.environ['PYTHONWARNINGS'] = 'ignore'
 
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
@@ -37,18 +41,13 @@ DB_NAME = "railway"
 DB_USER = "postgres"
 DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ==================== FIX 409: Remove webhook + force stop ====================
+# ==================== FIX 409 + RATE LIMIT ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
-    print("✅ Webhook removed")
 except:
     pass
 
-# Force stop any existing polling
 try:
     bot.stop_polling()
 except:
@@ -109,10 +108,8 @@ class Database:
                 timeout=30
             )
             self.conn.autocommit = True
-            print("✅ Database connected!")
             self.init_tables()
         except Exception as e:
-            print(f"❌ DB Error: {e}")
             time.sleep(5)
             self.connect()
     
@@ -172,10 +169,8 @@ class Database:
             cursor.execute("INSERT INTO settings (key, value) VALUES ('free_token_link', 'https://t.me/latestvideo10') ON CONFLICT (key) DO NOTHING")
             cursor.execute("INSERT INTO video_tracker (current_start) VALUES (12) ON CONFLICT DO NOTHING")
             self.conn.commit()
-            print("✅ Tables ready!")
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ Table error: {e}")
     
     def execute_query(self, query, params=None):
         cursor = self.conn.cursor()
@@ -188,7 +183,6 @@ class Database:
             return cursor
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ Query error: {e}")
             raise e
     
     def fetch_one(self, query, params=None):
@@ -206,8 +200,8 @@ class Database:
                 VALUES (%s, %s, %s, NOW())
                 ON CONFLICT (user_id) DO NOTHING
             ''', (user_id, username, first_name))
-        except Exception as e:
-            print(f"❌ create_user error: {e}")
+        except:
+            pass
     
     def create_token(self, token, created_by, hours, device_limit):
         try:
@@ -216,9 +210,8 @@ class Database:
                 INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
                 VALUES (%s, %s, %s, %s, NOW(), %s, 1)
             ''', (token, created_by, device_limit, hours, expiry))
-            print(f"✅ Token stored: {token}")
-        except Exception as e:
-            print(f"❌ create_token error: {e}")
+        except:
+            pass
     
     def redeem_token(self, token, user_id, device_id):
         token = token.upper().strip()
@@ -267,13 +260,11 @@ class Database:
             ''', (token, expiry, device_id, user_id))
             
             self.conn.commit()
-            print(f"✅ Token redeemed: {token} by {user_id}")
             return True, f"✅ Token redeemed! {hours} hours added.", hours
             
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ redeem_token error: {e}")
-            return False, f"❌ Error: {str(e)}", 0
+            return False, f"❌ Error", 0
     
     def check_user_active(self, user_id):
         try:
@@ -295,8 +286,7 @@ class Database:
             
             return datetime.now() < expires_at
             
-        except Exception as e:
-            print(f"❌ check_user_active error: {e}")
+        except:
             return False
     
     def update_channel_status(self, user_id, channel_id, joined):
@@ -310,36 +300,33 @@ class Database:
             if result:
                 total = result[0] + result[1]
                 self.execute_query('UPDATE users SET joined_channels = %s WHERE user_id = %s', (total, user_id))
-        except Exception as e:
-            print(f"❌ update_channel_status error: {e}")
+        except:
+            pass
     
     def get_user_token(self, user_id):
         try:
             return self.fetch_one('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
-        except Exception as e:
-            print(f"❌ get_user_token error: {e}")
+        except:
             return None
     
     def get_all_tokens(self):
         try:
             return self.fetch_all('SELECT * FROM tokens ORDER BY created_at DESC')
-        except Exception as e:
-            print(f"❌ get_all_tokens error: {e}")
+        except:
             return []
     
     def get_setting(self, key):
         try:
             result = self.fetch_one('SELECT value FROM settings WHERE key = %s', (key,))
             return result[0] if result else None
-        except Exception as e:
-            print(f"❌ get_setting error: {e}")
+        except:
             return None
     
     def set_setting(self, key, value):
         try:
             self.execute_query('UPDATE settings SET value = %s WHERE key = %s', (value, key))
-        except Exception as e:
-            print(f"❌ set_setting error: {e}")
+        except:
+            pass
     
     def get_current_start(self):
         result = self.fetch_one('SELECT current_start FROM video_tracker ORDER BY id DESC LIMIT 1')
@@ -350,31 +337,24 @@ class Database:
 
 # ==================== INIT DATABASE ====================
 db = Database()
-print("✅ Database ready!")
 
 # ==================== CHANNEL CHECK ====================
 def check_user_channels(user_id):
-    """Check if user has joined required private channels"""
     try:
         joined_count = 0
         for channel in REQUIRED_CHANNELS:
             try:
                 status = bot.get_chat_member(channel['id'], user_id).status
-                print(f"[*] Channel {channel['name']} status: {status}")
-                
                 if status in ['member', 'administrator', 'creator']:
                     joined_count += 1
                     db.update_channel_status(user_id, channel['id'], True)
                 else:
                     db.update_channel_status(user_id, channel['id'], False)
-                    
-            except Exception as e:
-                print(f"❌ Error checking channel {channel['id']}: {e}")
+            except:
                 db.update_channel_status(user_id, channel['id'], False)
         
         return joined_count >= len(REQUIRED_CHANNELS), joined_count
-    except Exception as e:
-        print(f"❌ check_user_channels error: {e}")
+    except:
         return False, 0
 
 # ==================== VIDEO SYSTEM ====================
@@ -397,7 +377,6 @@ def update_video_batch():
     current_start = db.get_current_start()
     new_start = current_start + VIDEOS_PER_BATCH
     db.update_current_start(new_start)
-    print(f"[*] Updated: {current_start} → {new_start}")
     return new_start
 
 def send_videos_to_user(chat_id, user_id):
@@ -449,8 +428,7 @@ def send_videos_to_user(chat_id, user_id):
                     add_message_to_delete(chat_id, video_msg.message_id)
                     sent_count += 1
                     break
-                except Exception as e:
-                    print(f"❌ Attempt {attempt+1} failed: {e}")
+                except:
                     time.sleep(2)
             
             if not video_sent:
@@ -460,8 +438,7 @@ def send_videos_to_user(chat_id, user_id):
             
             time.sleep(0.5)
             
-        except Exception as e:
-            print(f"❌ Error sending video {i}: {e}")
+        except:
             failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
             add_message_to_delete(chat_id, failed_msg.message_id)
             failed_count += 1
@@ -483,7 +460,7 @@ def schedule_video_update():
         try:
             bot.send_message(
                 OWNER_ID,
-                f"🔄 **Batch updated!**\nNew: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}"
+                f"🔄 Batch updated: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}"
             )
         except:
             pass
@@ -548,10 +525,10 @@ def start(message):
 🌟 **WELCOME TO KORN VIDEOS KING** 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
-🔹 **Join private channels first!**
-🔹 After joining, click **"I've Joined"**
+🔹 Join private channels first!
+🔹 After joining, click "I've Joined"
 
-📌 **Status:** {joined_count}/{len(REQUIRED_CHANNELS)} joined
+📌 Status: {joined_count}/{len(REQUIRED_CHANNELS)} joined
 
 ━━━━━━━━━━━━━━━━━━━━━
 ✨ Premium Content
@@ -637,7 +614,7 @@ def handle_callback(call):
     
     if call.data == "user_redeem":
         bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "🔑 **Enter Token:**\nExample: ABC123XYZ789", parse_mode='Markdown')
+        msg = bot.send_message(call.message.chat.id, "🔑 Enter Token:\nExample: ABC123XYZ789", parse_mode='Markdown')
         add_message_to_delete(call.message.chat.id, msg.message_id)
         bot.register_next_step_handler(msg, process_redeem)
         return
@@ -833,7 +810,7 @@ def get_videos_command(message):
 def help_command(message):
     if message.from_user.id == OWNER_ID:
         text = """
-👑 **OWNER HELP**
+👑 OWNER HELP
 
 /create [HOURS] [LIMIT] - Create token
 /tokens - List all tokens
@@ -843,7 +820,7 @@ def help_command(message):
 """
     else:
         text = """
-🔹 **USER HELP**
+🔹 USER HELP
 
 /redeem [TOKEN] - Redeem your token
 /videos - Get latest videos
@@ -860,21 +837,12 @@ def default_handler(message):
 
 # ==================== MAIN ====================
 def main():
-    print("""
-    ╔═══════════════════════════════════════════════════════════════╗
-    ║   ✨ KORN VIDEOS KING - FIXED 409 + REDEEM ✨                ║
-    ╚═══════════════════════════════════════════════════════════════╝
-    """)
-    print(f"✅ Owner: {OWNER_ID}")
-    print(f"✅ Channel 1 ID: {REQUIRED_CHANNELS[0]['id']}")
-    print(f"✅ Channel 2 ID: {REQUIRED_CHANNELS[1]['id']}")
-    print(f"✅ Bot starting...")
+    print("✅ Bot starting...")
     
     while True:
         try:
             bot.infinity_polling(timeout=10, long_polling_timeout=10)
-        except Exception as e:
-            print(f"❌ Error: {str(e)}")
+        except:
             time.sleep(5)
 
 if __name__ == "__main__":
