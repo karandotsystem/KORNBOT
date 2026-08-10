@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-✨ KORN VIDEOS KING - FIXED REQUEST DETECTION ✨
+✨ KORN VIDEOS KING - FIXED 409 + REDEEM ✨
 """
 
 import os
@@ -40,9 +40,17 @@ DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== FIX 409: Remove webhook + force stop ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
+    print("✅ Webhook removed")
+except:
+    pass
+
+# Force stop any existing polling
+try:
+    bot.stop_polling()
 except:
     pass
 
@@ -344,16 +352,15 @@ class Database:
 db = Database()
 print("✅ Database ready!")
 
-# ==================== CHANNEL CHECK - FIXED ====================
+# ==================== CHANNEL CHECK ====================
 def check_user_channels(user_id):
     """Check if user has joined required private channels"""
     try:
         joined_count = 0
         for channel in REQUIRED_CHANNELS:
             try:
-                # Using channel ID to check member status
                 status = bot.get_chat_member(channel['id'], user_id).status
-                print(f"[*] Channel {channel['name']} (ID: {channel['id']}) status: {status}")
+                print(f"[*] Channel {channel['name']} status: {status}")
                 
                 if status in ['member', 'administrator', 'creator']:
                     joined_count += 1
@@ -365,7 +372,6 @@ def check_user_channels(user_id):
                 print(f"❌ Error checking channel {channel['id']}: {e}")
                 db.update_channel_status(user_id, channel['id'], False)
         
-        print(f"[*] User {user_id} joined {joined_count}/{len(REQUIRED_CHANNELS)} channels")
         return joined_count >= len(REQUIRED_CHANNELS), joined_count
     except Exception as e:
         print(f"❌ check_user_channels error: {e}")
@@ -530,28 +536,27 @@ def start(message):
     
     add_message_to_delete(message.chat.id, message.message_id)
     
-    # Force check channels
     joined, joined_count = check_user_channels(user_id)
     
     if not joined and user_id != OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=1)
         for channel in REQUIRED_CHANNELS:
-            markup.add(types.InlineKeyboardButton(f"📢 Join {channel['name']}", url=channel['link']))
+            markup.add(types.InlineKeyboardButton(f"📢 {channel['name']}", url=channel['link']))
         markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
         
         text = f"""
 🌟 **WELCOME TO KORN VIDEOS KING** 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
-🔹 **Please join our private channels first!**
+🔹 **Join private channels first!**
 🔹 After joining, click **"I've Joined"**
 
 📌 **Status:** {joined_count}/{len(REQUIRED_CHANNELS)} joined
 
 ━━━━━━━━━━━━━━━━━━━━━
-✨ *Premium Content Access*
-✨ *Daily Video Updates*
-✨ *Exclusive Content*
+✨ Premium Content
+✨ Daily Updates
+✨ Exclusive Access
 """
         msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
@@ -559,15 +564,14 @@ def start(message):
     
     if user_id == OWNER_ID:
         markup = get_premium_menu(user_id)
-        text = f"""
+        text = """
 👑 **WELCOME BOSS** 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
-✨ *Premium Bot Control*
-✨ *Full Admin Access*
-✨ *Manage Everything*
+✨ Full Admin Control
+✨ Manage Everything
 
-💎 **Owner Panel**
+💎 Owner Panel
 """
         msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
@@ -590,10 +594,10 @@ def start(message):
 🌟 **ACCESS GRANTED** 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
-✨ **Token Valid:** {time_str}
-✨ **Status:** Active
+✨ Token Valid: {time_str}
+✨ Status: Active
 
-💎 **Premium Features:**
+💎 Premium Features:
 🔹 Latest 10 Videos
 🔹 12H Auto Updates
 🔹 Exclusive Content
@@ -604,19 +608,14 @@ def start(message):
         send_videos_to_user(message.chat.id, user_id)
     else:
         markup = get_premium_menu(user_id)
-        text = f"""
+        text = """
 🌟 **WELCOME TO KORN VIDEOS KING** 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
-🔹 **You need a token to access content!**
+🔹 Need a token to access content!
 🔹 Use /redeem [TOKEN] to activate
 
-━━━━━━━━━━━━━━━━━━━━━
-✨ *Premium Content Access*
-✨ *Daily Video Updates*
-✨ *Exclusive Content*
-
-💎 **Get Started:**
+💎 Get Started:
 """
         msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
@@ -633,7 +632,7 @@ def handle_callback(call):
             bot.answer_callback_query(call.id, "✅ Access granted! Use /start")
             start(call.message)
         else:
-            bot.answer_callback_query(call.id, f"❌ Please join both private channels! ({joined_count}/{len(REQUIRED_CHANNELS)})", show_alert=True)
+            bot.answer_callback_query(call.id, f"❌ Please join both channels! ({joined_count}/{len(REQUIRED_CHANNELS)})", show_alert=True)
         return
     
     if call.data == "user_redeem":
@@ -863,7 +862,7 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   ✨ KORN VIDEOS KING - PRIVATE CHANNEL DETECTION ✨         ║
+    ║   ✨ KORN VIDEOS KING - FIXED 409 + REDEEM ✨                ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
