@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-✨ KORN VIDEOS KING - NO LOGGING (Railway Rate Limit Fix) ✨
+✨ KORN VIDEOS KING - WORKING ✨
 """
 
 import os
@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import telebot
 from telebot import types
 
-# ==================== DISABLE ALL LOGGING ====================
+# ==================== DISABLE LOGGING ====================
 import logging
 logging.disable(logging.CRITICAL)
 os.environ['PYTHONWARNINGS'] = 'ignore'
@@ -25,8 +25,8 @@ VIDEO_CHANNEL = "latestvideo10"
 
 # ==================== PRIVATE CHANNELS ====================
 REQUIRED_CHANNELS = [
-    {"id": -1004437461139, "link": "https://t.me/+0tNVyCsuevY4Mzhl", "username": "VATEROFWHOLETG", "name": "Channel 1"},
-    {"id": -1004353418790, "link": "https://t.me/+riBFv5MaTOFjNDhl", "username": "VATEROFWHOLETG2", "name": "Channel 2"}
+    {"id": -1004437461139, "link": "https://t.me/+0tNVyCsuevY4Mzhl", "name": "Channel 1"},
+    {"id": -1004353418790, "link": "https://t.me/+riBFv5MaTOFjNDhl", "name": "Channel 2"}
 ]
 
 DELETE_AFTER_MINUTES = 10
@@ -41,7 +41,7 @@ DB_NAME = "railway"
 DB_USER = "postgres"
 DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 
-# ==================== FIX 409 + RATE LIMIT ====================
+# ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
@@ -110,6 +110,7 @@ class Database:
             self.conn.autocommit = True
             self.init_tables()
         except Exception as e:
+            print(f"DB Error: {e}")
             time.sleep(5)
             self.connect()
     
@@ -181,17 +182,21 @@ class Database:
                 cursor.execute(query)
             self.conn.commit()
             return cursor
-        except Exception as e:
+        except:
             self.conn.rollback()
-            raise e
+            return None
     
     def fetch_one(self, query, params=None):
         cursor = self.execute_query(query, params)
-        return cursor.fetchone()
+        if cursor:
+            return cursor.fetchone()
+        return None
     
     def fetch_all(self, query, params=None):
         cursor = self.execute_query(query, params)
-        return cursor.fetchall()
+        if cursor:
+            return cursor.fetchall()
+        return []
     
     def create_user(self, user_id, username, first_name):
         try:
@@ -336,7 +341,9 @@ class Database:
         self.execute_query('UPDATE video_tracker SET current_start = %s, last_updated = NOW()', (new_start,))
 
 # ==================== INIT DATABASE ====================
+print("[*] Connecting to database...")
 db = Database()
+print("[*] Database ready!")
 
 # ==================== CHANNEL CHECK ====================
 def check_user_channels(user_id):
@@ -399,11 +406,10 @@ def send_videos_to_user(chat_id, user_id):
     
     current_start = db.get_current_start()
     msg = bot.edit_message_text(
-        f"📹 **Sending videos {current_start} to {current_start + VIDEOS_PER_BATCH - 1}**\n"
+        f"📹 Sending videos {current_start} to {current_start + VIDEOS_PER_BATCH - 1}\n"
         f"⏱ Updates every {UPDATE_INTERVAL_HOURS}h",
         chat_id=chat_id,
-        message_id=loading.message_id,
-        parse_mode='Markdown'
+        message_id=loading.message_id
     )
     add_message_to_delete(chat_id, msg.message_id)
     
@@ -432,24 +438,24 @@ def send_videos_to_user(chat_id, user_id):
                     time.sleep(2)
             
             if not video_sent:
-                failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
+                failed_msg = bot.send_message(chat_id, f"❌ Video {i} Failed")
                 add_message_to_delete(chat_id, failed_msg.message_id)
                 failed_count += 1
             
             time.sleep(0.5)
             
         except:
-            failed_msg = bot.send_message(chat_id, f"❌ **Video {i} Failed**")
+            failed_msg = bot.send_message(chat_id, f"❌ Video {i} Failed")
             add_message_to_delete(chat_id, failed_msg.message_id)
             failed_count += 1
     
     if failed_count > 0:
-        summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**"
+        summary = f"📊 {sent_count} videos sent, {failed_count} failed."
     else:
-        summary = f"✅ **All {sent_count} videos sent successfully!**"
+        summary = f"✅ All {sent_count} videos sent successfully!"
     summary += f"\n⏱ Next batch in {UPDATE_INTERVAL_HOURS}h"
     
-    msg = bot.send_message(chat_id, summary, parse_mode='Markdown')
+    msg = bot.send_message(chat_id, summary)
     add_message_to_delete(chat_id, msg.message_id)
 
 # ==================== SCHEDULED UPDATE ====================
@@ -467,8 +473,8 @@ def schedule_video_update():
 
 threading.Thread(target=schedule_video_update, daemon=True).start()
 
-# ==================== PREMIUM MENU ====================
-def get_premium_menu(user_id):
+# ==================== MENU ====================
+def get_menu(user_id):
     is_active = db.check_user_active(user_id)
     joined, joined_count = check_user_channels(user_id)
     
@@ -522,7 +528,7 @@ def start(message):
         markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
         
         text = f"""
-🌟 **WELCOME TO KORN VIDEOS KING** 🌟
+🌟 WELCOME TO KORN VIDEOS KING 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
 🔹 Join private channels first!
@@ -535,14 +541,14 @@ def start(message):
 ✨ Daily Updates
 ✨ Exclusive Access
 """
-        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        msg = bot.reply_to(message, text, reply_markup=markup)
         add_message_to_delete(message.chat.id, msg.message_id)
         return
     
     if user_id == OWNER_ID:
-        markup = get_premium_menu(user_id)
+        markup = get_menu(user_id)
         text = """
-👑 **WELCOME BOSS** 👑
+👑 WELCOME BOSS 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
 ✨ Full Admin Control
@@ -550,7 +556,7 @@ def start(message):
 
 💎 Owner Panel
 """
-        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        msg = bot.reply_to(message, text, reply_markup=markup)
         add_message_to_delete(message.chat.id, msg.message_id)
         return
     
@@ -566,9 +572,9 @@ def start(message):
         else:
             time_str = "Unknown"
         
-        markup = get_premium_menu(user_id)
+        markup = get_menu(user_id)
         text = f"""
-🌟 **ACCESS GRANTED** 🌟
+🌟 ACCESS GRANTED 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
 ✨ Token Valid: {time_str}
@@ -579,14 +585,14 @@ def start(message):
 🔹 12H Auto Updates
 🔹 Exclusive Content
 """
-        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        msg = bot.reply_to(message, text, reply_markup=markup)
         add_message_to_delete(message.chat.id, msg.message_id)
         
         send_videos_to_user(message.chat.id, user_id)
     else:
-        markup = get_premium_menu(user_id)
+        markup = get_menu(user_id)
         text = """
-🌟 **WELCOME TO KORN VIDEOS KING** 🌟
+🌟 WELCOME TO KORN VIDEOS KING 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
 🔹 Need a token to access content!
@@ -594,7 +600,7 @@ def start(message):
 
 💎 Get Started:
 """
-        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        msg = bot.reply_to(message, text, reply_markup=markup)
         add_message_to_delete(message.chat.id, msg.message_id)
 
 # ==================== CALLBACKS ====================
@@ -614,7 +620,7 @@ def handle_callback(call):
     
     if call.data == "user_redeem":
         bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "🔑 Enter Token:\nExample: ABC123XYZ789", parse_mode='Markdown')
+        msg = bot.send_message(call.message.chat.id, "🔑 Enter Token:\nExample: ABC123XYZ789")
         add_message_to_delete(call.message.chat.id, msg.message_id)
         bot.register_next_step_handler(msg, process_redeem)
         return
@@ -691,12 +697,11 @@ def create_token(message):
     db.create_token(token, OWNER_ID, hours, device_limit)
     
     msg = bot.reply_to(message, 
-        f"✅ **TOKEN CREATED!**\n\n"
-        f"🔑 Token: `{token}`\n"
+        f"✅ TOKEN CREATED!\n\n"
+        f"🔑 Token: {token}\n"
         f"⏱ Hours: {hours}\n"
         f"🖥 Device Limit: {device_limit}\n\n"
-        f"User can redeem with:\n`/redeem {token}`",
-        parse_mode='Markdown')
+        f"User can redeem with:\n/redeem {token}")
     add_message_to_delete(message.chat.id, msg.message_id)
 
 @bot.message_handler(commands=['change'])
@@ -729,12 +734,12 @@ def list_tokens(message):
         add_message_to_delete(message.chat.id, msg.message_id)
         return
     
-    text = "📋 **TOKENS**\n\n"
+    text = "📋 TOKENS\n\n"
     for t in tokens:
         status = "✅ Active" if t[7] else "❌ Expired"
-        text += f"🔑 `{t[0]}` - {t[3]}h - {t[4]}/{t[2]} used - {status}\n"
+        text += f"🔑 {t[0]} - {t[3]}h - {t[4]}/{t[2]} used - {status}\n"
     
-    msg = bot.reply_to(message, text, parse_mode='Markdown')
+    msg = bot.reply_to(message, text)
     add_message_to_delete(message.chat.id, msg.message_id)
 
 @bot.message_handler(commands=['nextbatch'])
@@ -748,10 +753,9 @@ def next_batch(message):
     new_start = update_video_batch()
     
     msg = bot.reply_to(message, 
-        f"🔄 **Batch updated!**\n"
+        f"🔄 Batch updated!\n"
         f"Old: {old_start} to {old_start + VIDEOS_PER_BATCH - 1}\n"
-        f"New: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}",
-        parse_mode='Markdown')
+        f"New: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}")
     add_message_to_delete(message.chat.id, msg.message_id)
 
 # ==================== USER COMMANDS ====================
@@ -795,7 +799,7 @@ def token_info(message):
             time_str = "Expired"
             status = "❌ Expired"
         
-        msg = bot.reply_to(message, f"📊 **TOKEN INFO**\n\n🔑 Token: `{token}`\n⏱ Remaining: {time_str}\n📌 Status: {status}", parse_mode='Markdown')
+        msg = bot.reply_to(message, f"📊 TOKEN INFO\n\n🔑 Token: {token}\n⏱ Remaining: {time_str}\n📌 Status: {status}")
         add_message_to_delete(message.chat.id, msg.message_id)
     else:
         msg = bot.reply_to(message, "❌ No token info.")
@@ -827,7 +831,7 @@ def help_command(message):
 /tokeninfo - Check token status
 """
     
-    msg = bot.reply_to(message, text, parse_mode='Markdown')
+    msg = bot.reply_to(message, text)
     add_message_to_delete(message.chat.id, msg.message_id)
 
 @bot.message_handler(func=lambda message: True)
