@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
 ✨ KORN VIDEOS KING - PREMIUM EDITION ✨
-- Channel Join System
-- Sequential Video System (Fixed)
-- Premium Interface
+Private Channel Request Detection
 """
 
 import os
@@ -22,10 +20,10 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 VIDEO_CHANNEL = "latestvideo10"
 
-# ==================== REQUIRED CHANNELS ====================
+# ==================== PRIVATE CHANNEL IDs ====================
 REQUIRED_CHANNELS = [
-    {"link": "https://t.me/+0tNVyCsuevY4Mzhl", "username": "@VATEROFWHOLETG"},
-    {"link": "https://t.me/+riBFv5MaTOFjNDhl", "username": "@VATEROFWHOLETG2"}
+    {"id": -1004437461139, "link": "https://t.me/+0tNVyCsuevY4Mzhl", "name": "Channel 1"},
+    {"id": -1004353418790, "link": "https://t.me/+riBFv5MaTOFjNDhl", "name": "Channel 2"}
 ]
 
 DELETE_AFTER_MINUTES = 10
@@ -125,6 +123,8 @@ class Database:
                     device_id TEXT,
                     is_active INTEGER DEFAULT 0,
                     joined_channels INTEGER DEFAULT 0,
+                    channel1_joined INTEGER DEFAULT 0,
+                    channel2_joined INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
@@ -292,22 +292,43 @@ class Database:
             print(f"❌ check_user_active error: {e}")
             return False
     
-    def check_joined_channels(self, user_id):
+    def update_channel_status(self, user_id, channel_id, joined):
+        """Update individual channel join status"""
         try:
-            cursor = self.conn.cursor()
-            cursor.execute('SELECT joined_channels FROM users WHERE user_id = %s', (user_id,))
-            result = cursor.fetchone()
-            self.conn.commit()
-            return result[0] if result else 0
+            if channel_id == -1004437461139:
+                self.execute_query('UPDATE users SET channel1_joined = %s WHERE user_id = %s', (1 if joined else 0, user_id))
+            elif channel_id == -1004353418790:
+                self.execute_query('UPDATE users SET channel2_joined = %s WHERE user_id = %s', (1 if joined else 0, user_id))
+            
+            # Update total joined count
+            result = self.fetch_one('SELECT channel1_joined, channel2_joined FROM users WHERE user_id = %s', (user_id,))
+            if result:
+                total = result[0] + result[1]
+                self.execute_query('UPDATE users SET joined_channels = %s WHERE user_id = %s', (total, user_id))
         except Exception as e:
-            print(f"❌ check_joined_channels error: {e}")
-            return 0
+            print(f"❌ update_channel_status error: {e}")
     
-    def set_joined_channels(self, user_id, count):
+    def check_user_channels(self, user_id):
+        """Check if user has joined channels by checking status"""
         try:
-            self.execute_query('UPDATE users SET joined_channels = %s WHERE user_id = %s', (count, user_id))
+            joined_count = 0
+            for channel in REQUIRED_CHANNELS:
+                try:
+                    # Try to get member status using Telegram Bot API
+                    status = bot.get_chat_member(channel['id'], user_id).status
+                    if status in ['member', 'administrator', 'creator']:
+                        joined_count += 1
+                        self.update_channel_status(user_id, channel['id'], True)
+                    else:
+                        self.update_channel_status(user_id, channel['id'], False)
+                except Exception as e:
+                    print(f"❌ Channel check error for {channel['id']}: {e}")
+                    self.update_channel_status(user_id, channel['id'], False)
+            
+            return joined_count >= len(REQUIRED_CHANNELS), joined_count
         except Exception as e:
-            print(f"❌ set_joined_channels error: {e}")
+            print(f"❌ check_user_channels error: {e}")
+            return False, 0
     
     def get_user_token(self, user_id):
         try:
@@ -350,21 +371,23 @@ print("✅ Database ready!")
 
 # ==================== CHANNEL CHECK ====================
 def check_user_channels(user_id):
-    """Check if user has joined required channels"""
+    """Check if user has joined required private channels"""
     try:
         joined_count = 0
         for channel in REQUIRED_CHANNELS:
             try:
-                # Try to get chat member status
-                status = bot.get_chat_member(channel['username'], user_id).status
+                # Get chat member status from Telegram
+                status = bot.get_chat_member(channel['id'], user_id).status
+                print(f"[*] Channel {channel['name']} status for user {user_id}: {status}")
                 if status in ['member', 'administrator', 'creator']:
                     joined_count += 1
+                    db.update_channel_status(user_id, channel['id'], True)
+                else:
+                    db.update_channel_status(user_id, channel['id'], False)
             except Exception as e:
-                print(f"Channel check error: {e}")
-                # If can't check, assume not joined
-                pass
+                print(f"❌ Channel check error: {e}")
+                db.update_channel_status(user_id, channel['id'], False)
         
-        db.set_joined_channels(user_id, joined_count)
         return joined_count >= len(REQUIRED_CHANNELS), joined_count
     except Exception as e:
         print(f"❌ check_user_channels error: {e}")
@@ -388,7 +411,6 @@ def get_sequential_videos():
 
 def update_video_batch():
     current_start = db.get_current_start()
-    # Fix: 12->22 (skip 10), 22->32, etc.
     new_start = current_start + VIDEOS_PER_BATCH
     db.update_current_start(new_start)
     print(f"[*] Updated: {current_start} → {new_start}")
@@ -486,7 +508,6 @@ threading.Thread(target=schedule_video_update, daemon=True).start()
 
 # ==================== PREMIUM MENU ====================
 def get_premium_menu(user_id):
-    """Generate premium style menu"""
     is_active = db.check_user_active(user_id)
     joined, joined_count = check_user_channels(user_id)
     
@@ -514,9 +535,8 @@ def get_premium_menu(user_id):
                 types.InlineKeyboardButton("🎁 Free Token", url=db.get_setting('free_token_link') or 'https://t.me/latestvideo10')
             )
         else:
-            # Join required channels first
-            for i, channel in enumerate(REQUIRED_CHANNELS, 1):
-                markup.add(types.InlineKeyboardButton(f"📢 Join Channel {i}", url=channel['link']))
+            for channel in REQUIRED_CHANNELS:
+                markup.add(types.InlineKeyboardButton(f"📢 {channel['name']}", url=channel['link']))
             markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
     
     return markup
@@ -538,15 +558,17 @@ def start(message):
     if not joined and user_id != OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=1)
         for channel in REQUIRED_CHANNELS:
-            markup.add(types.InlineKeyboardButton("📢 Join Channel", url=channel['link']))
+            markup.add(types.InlineKeyboardButton(f"📢 Join {channel['name']}", url=channel['link']))
         markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
         
         text = f"""
 🌟 **WELCOME TO KORN VIDEOS KING** 🌟
 
 ━━━━━━━━━━━━━━━━━━━━━
-🔹 **Please join our channels first!**
+🔹 **Please join our private channels first!**
 🔹 After joining, click **"I've Joined"**
+
+📌 **Status:** {joined_count}/{len(REQUIRED_CHANNELS)} joined
 
 ━━━━━━━━━━━━━━━━━━━━━
 ✨ *Premium Content Access*
@@ -634,7 +656,7 @@ def handle_callback(call):
             bot.answer_callback_query(call.id, "✅ Access granted! Use /start")
             start(call.message)
         else:
-            bot.answer_callback_query(call.id, f"❌ Please join both channels! ({joined_count}/{len(REQUIRED_CHANNELS)})", show_alert=True)
+            bot.answer_callback_query(call.id, f"❌ Please join both private channels! ({joined_count}/{len(REQUIRED_CHANNELS)})", show_alert=True)
         return
     
     if call.data == "user_redeem":
@@ -864,15 +886,12 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   ✨ KORN VIDEOS KING - PREMIUM EDITION ✨                   ║
-    ║   - Join System                                              ║
-    ║   - Sequential Videos                                        ║
-    ║   - Premium Interface                                        ║
+    ║   ✨ KORN VIDEOS KING - PRIVATE CHANNEL DETECTION ✨         ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
-    print(f"✅ Channel 1: {REQUIRED_CHANNELS[0]['link']}")
-    print(f"✅ Channel 2: {REQUIRED_CHANNELS[1]['link']}")
+    print(f"✅ Channel 1 ID: {REQUIRED_CHANNELS[0]['id']}")
+    print(f"✅ Channel 2 ID: {REQUIRED_CHANNELS[1]['id']}")
     print(f"✅ Bot starting...")
     
     while True:
