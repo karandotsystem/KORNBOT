@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-📹 TOKEN VIDEO BOT - NO CHANNEL LINKS
+✨ KORN VIDEOS KING - PREMIUM EDITION ✨
+- Channel Join System
+- Sequential Video System (Fixed)
+- Premium Interface
 """
 
 import os
@@ -9,7 +12,6 @@ import logging
 import random
 import string
 import pg8000
-import requests
 import threading
 from datetime import datetime, timedelta
 import telebot
@@ -19,14 +21,19 @@ from telebot import types
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 VIDEO_CHANNEL = "latestvideo10"
-DELETE_AFTER_MINUTES = 10
 
-# ==================== SEQUENTIAL VIDEO SYSTEM ====================
+# ==================== REQUIRED CHANNELS ====================
+REQUIRED_CHANNELS = [
+    {"link": "https://t.me/+0tNVyCsuevY4Mzhl", "username": "@VATEROFWHOLETG"},
+    {"link": "https://t.me/+riBFv5MaTOFjNDhl", "username": "@VATEROFWHOLETG2"}
+]
+
+DELETE_AFTER_MINUTES = 10
 START_VIDEO_ID = 12
 VIDEOS_PER_BATCH = 10
 UPDATE_INTERVAL_HOURS = 12
 
-# ==================== DATABASE CONNECTION ====================
+# ==================== DATABASE ====================
 DB_HOST = "reseau.proxy.rlwy.net"
 DB_PORT = 29905
 DB_NAME = "railway"
@@ -39,11 +46,10 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
-    print("✅ Webhook removed")
 except:
     pass
 
-# ==================== MESSAGE DELETE TRACKER ====================
+# ==================== MESSAGE DELETE ====================
 messages_to_delete = {}
 
 def add_message_to_delete(chat_id, message_id, delay_minutes=DELETE_AFTER_MINUTES):
@@ -98,7 +104,7 @@ class Database:
                 timeout=30
             )
             self.conn.autocommit = True
-            print("✅ Database connected successfully!")
+            print("✅ Database connected!")
             self.init_tables()
         except Exception as e:
             print(f"❌ DB Error: {e}")
@@ -118,6 +124,7 @@ class Database:
                     token_expires_at TIMESTAMP,
                     device_id TEXT,
                     is_active INTEGER DEFAULT 0,
+                    joined_channels INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             ''')
@@ -161,7 +168,7 @@ class Database:
             print("✅ Tables ready!")
         except Exception as e:
             self.conn.rollback()
-            print(f"❌ Table creation error: {e}")
+            print(f"❌ Table error: {e}")
     
     def execute_query(self, query, params=None):
         cursor = self.conn.cursor()
@@ -202,7 +209,7 @@ class Database:
                 INSERT INTO tokens (token, created_by, device_limit, hours, created_at, expiry_time, is_active)
                 VALUES (%s, %s, %s, %s, NOW(), %s, 1)
             ''', (token, created_by, device_limit, hours, expiry))
-            print(f"✅ Token stored in DB: {token}")
+            print(f"✅ Token stored: {token}")
         except Exception as e:
             print(f"❌ create_token error: {e}")
     
@@ -253,7 +260,7 @@ class Database:
             ''', (token, expiry, device_id, user_id))
             
             self.conn.commit()
-            print(f"✅ Token redeemed: {token} by user {user_id}")
+            print(f"✅ Token redeemed: {token} by {user_id}")
             return True, f"✅ Token redeemed! {hours} hours added.", hours
             
         except Exception as e:
@@ -285,6 +292,23 @@ class Database:
             print(f"❌ check_user_active error: {e}")
             return False
     
+    def check_joined_channels(self, user_id):
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT joined_channels FROM users WHERE user_id = %s', (user_id,))
+            result = cursor.fetchone()
+            self.conn.commit()
+            return result[0] if result else 0
+        except Exception as e:
+            print(f"❌ check_joined_channels error: {e}")
+            return 0
+    
+    def set_joined_channels(self, user_id, count):
+        try:
+            self.execute_query('UPDATE users SET joined_channels = %s WHERE user_id = %s', (count, user_id))
+        except Exception as e:
+            print(f"❌ set_joined_channels error: {e}")
+    
     def get_user_token(self, user_id):
         try:
             return self.fetch_one('SELECT token, token_activated_at, token_expires_at, device_id FROM users WHERE user_id = %s', (user_id,))
@@ -315,20 +339,39 @@ class Database:
     
     def get_current_start(self):
         result = self.fetch_one('SELECT current_start FROM video_tracker ORDER BY id DESC LIMIT 1')
-        if result:
-            return result[0]
-        return 12
+        return result[0] if result else 12
     
     def update_current_start(self, new_start):
         self.execute_query('UPDATE video_tracker SET current_start = %s, last_updated = NOW()', (new_start,))
 
 # ==================== INIT DATABASE ====================
 db = Database()
-print("[*] Database ready!")
+print("✅ Database ready!")
 
-# ==================== VIDEO FETCHER - SEQUENTIAL ====================
+# ==================== CHANNEL CHECK ====================
+def check_user_channels(user_id):
+    """Check if user has joined required channels"""
+    try:
+        joined_count = 0
+        for channel in REQUIRED_CHANNELS:
+            try:
+                # Try to get chat member status
+                status = bot.get_chat_member(channel['username'], user_id).status
+                if status in ['member', 'administrator', 'creator']:
+                    joined_count += 1
+            except Exception as e:
+                print(f"Channel check error: {e}")
+                # If can't check, assume not joined
+                pass
+        
+        db.set_joined_channels(user_id, joined_count)
+        return joined_count >= len(REQUIRED_CHANNELS), joined_count
+    except Exception as e:
+        print(f"❌ check_user_channels error: {e}")
+        return False, 0
+
+# ==================== VIDEO SYSTEM ====================
 def get_sequential_videos():
-    """Get videos based on sequential system"""
     videos = []
     current_start = db.get_current_start()
     
@@ -345,13 +388,13 @@ def get_sequential_videos():
 
 def update_video_batch():
     current_start = db.get_current_start()
+    # Fix: 12->22 (skip 10), 22->32, etc.
     new_start = current_start + VIDEOS_PER_BATCH
     db.update_current_start(new_start)
-    print(f"[*] Updated batch: {current_start} → {new_start}")
+    print(f"[*] Updated: {current_start} → {new_start}")
     return new_start
 
 def send_videos_to_user(chat_id, user_id):
-    """Send sequential videos to user - NO CHANNEL LINKS"""
     is_active = db.check_user_active(user_id)
     
     if not is_active:
@@ -384,7 +427,6 @@ def send_videos_to_user(chat_id, user_id):
     
     for i, video in enumerate(videos, 1):
         try:
-            # NO CHANNEL LINK IN CAPTION
             caption = f"📹 Video {i}"
             
             video_sent = False
@@ -418,7 +460,6 @@ def send_videos_to_user(chat_id, user_id):
             add_message_to_delete(chat_id, failed_msg.message_id)
             failed_count += 1
     
-    # NO CHANNEL LINK IN SUMMARY
     if failed_count > 0:
         summary = f"📊 **{sent_count} videos sent, {failed_count} failed.**"
     else:
@@ -436,13 +477,49 @@ def schedule_video_update():
         try:
             bot.send_message(
                 OWNER_ID,
-                f"🔄 **Video batch updated!**\n"
-                f"New videos: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}"
+                f"🔄 **Batch updated!**\nNew: {new_start} to {new_start + VIDEOS_PER_BATCH - 1}"
             )
         except:
             pass
 
 threading.Thread(target=schedule_video_update, daemon=True).start()
+
+# ==================== PREMIUM MENU ====================
+def get_premium_menu(user_id):
+    """Generate premium style menu"""
+    is_active = db.check_user_active(user_id)
+    joined, joined_count = check_user_channels(user_id)
+    
+    if user_id == OWNER_ID:
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🔑 Create Token", callback_data="owner_create"),
+            types.InlineKeyboardButton("📋 My Tokens", callback_data="owner_tokens"),
+            types.InlineKeyboardButton("🔗 Change Link", callback_data="owner_link"),
+            types.InlineKeyboardButton("🔄 Next Batch", callback_data="owner_next_batch")
+        )
+        return markup
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    if is_active:
+        markup.add(
+            types.InlineKeyboardButton("📹 Latest Videos", callback_data="user_videos"),
+            types.InlineKeyboardButton("📊 My Token", callback_data="user_token")
+        )
+    else:
+        if joined:
+            markup.add(
+                types.InlineKeyboardButton("🔑 Redeem Token", callback_data="user_redeem"),
+                types.InlineKeyboardButton("🎁 Free Token", url=db.get_setting('free_token_link') or 'https://t.me/latestvideo10')
+            )
+        else:
+            # Join required channels first
+            for i, channel in enumerate(REQUIRED_CHANNELS, 1):
+                markup.add(types.InlineKeyboardButton(f"📢 Join Channel {i}", url=channel['link']))
+            markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
+    
+    return markup
 
 # ==================== BOT COMMANDS ====================
 
@@ -455,23 +532,45 @@ def start(message):
     
     add_message_to_delete(message.chat.id, message.message_id)
     
-    if user_id == OWNER_ID:
+    # Check if user has joined required channels
+    joined, joined_count = check_user_channels(user_id)
+    
+    if not joined and user_id != OWNER_ID:
         markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🔑 Create Token", callback_data="owner_create"),
-            types.InlineKeyboardButton("📋 My Tokens", callback_data="owner_tokens"),
-            types.InlineKeyboardButton("🔗 Change Free Link", callback_data="owner_link"),
-            types.InlineKeyboardButton("🔄 Next Batch", callback_data="owner_next_batch")
-        )
-        msg = bot.reply_to(message, "👑 **WELCOME BOSS!**\n\nSelect an option:", reply_markup=markup, parse_mode='Markdown')
-        add_message_to_delete(message.chat.id, msg.message_id)
+        for channel in REQUIRED_CHANNELS:
+            markup.add(types.InlineKeyboardButton("📢 Join Channel", url=channel['link']))
+        markup.add(types.InlineKeyboardButton("✅ I've Joined", callback_data="check_joined"))
         
-        current = db.get_current_start()
-        bot.send_message(
-            user_id,
-            f"📊 **Current Batch:** {current} to {current + VIDEOS_PER_BATCH - 1}\n"
-            f"⏱ Next update in {UPDATE_INTERVAL_HOURS}h"
-        )
+        text = f"""
+🌟 **WELCOME TO KORN VIDEOS KING** 🌟
+
+━━━━━━━━━━━━━━━━━━━━━
+🔹 **Please join our channels first!**
+🔹 After joining, click **"I've Joined"**
+
+━━━━━━━━━━━━━━━━━━━━━
+✨ *Premium Content Access*
+✨ *Daily Video Updates*
+✨ *Exclusive Content*
+"""
+        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        add_message_to_delete(message.chat.id, msg.message_id)
+        return
+    
+    if user_id == OWNER_ID:
+        markup = get_premium_menu(user_id)
+        text = f"""
+👑 **WELCOME BOSS** 👑
+
+━━━━━━━━━━━━━━━━━━━━━
+✨ *Premium Bot Control*
+✨ *Full Admin Access*
+✨ *Manage Everything*
+
+💎 **Owner Panel**
+"""
+        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
+        add_message_to_delete(message.chat.id, msg.message_id)
         return
     
     is_active = db.check_user_active(user_id)
@@ -486,20 +585,111 @@ def start(message):
         else:
             time_str = "Unknown"
         
-        msg = bot.reply_to(message, f"✅ **ACCESS GRANTED**\nToken valid for: {time_str}\n\n📹 Sending latest videos...", parse_mode='Markdown')
+        markup = get_premium_menu(user_id)
+        text = f"""
+🌟 **ACCESS GRANTED** 🌟
+
+━━━━━━━━━━━━━━━━━━━━━
+✨ **Token Valid:** {time_str}
+✨ **Status:** Active
+
+💎 **Premium Features:**
+🔹 Latest 10 Videos
+🔹 12H Auto Updates
+🔹 Exclusive Content
+"""
+        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
+        
+        # Auto send videos
         send_videos_to_user(message.chat.id, user_id)
     else:
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        link = db.get_setting('free_token_link') or 'https://t.me/latestvideo10'
-        markup.add(
-            types.InlineKeyboardButton("🔑 Redeem Token", callback_data="user_redeem"),
-            types.InlineKeyboardButton("🎁 Get Free Token", url=link)
-        )
-        msg = bot.reply_to(message, "🔐 **TOKEN LOGIN**\n\nUse /redeem [TOKEN] to login.", reply_markup=markup, parse_mode='Markdown')
+        markup = get_premium_menu(user_id)
+        text = f"""
+🌟 **WELCOME TO KORN VIDEOS KING** 🌟
+
+━━━━━━━━━━━━━━━━━━━━━
+🔹 **You need a token to access content!**
+🔹 Use /redeem [TOKEN] to activate
+
+━━━━━━━━━━━━━━━━━━━━━
+✨ *Premium Content Access*
+✨ *Daily Video Updates*
+✨ *Exclusive Content*
+
+💎 **Get Started:**
+"""
+        msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
 
-# ===== OWNER COMMANDS =====
+# ==================== CALLBACKS ====================
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    user_id = call.from_user.id
+    
+    if call.data == "check_joined":
+        joined, joined_count = check_user_channels(user_id)
+        if joined:
+            bot.answer_callback_query(call.id, "✅ Access granted! Use /start")
+            start(call.message)
+        else:
+            bot.answer_callback_query(call.id, f"❌ Please join both channels! ({joined_count}/{len(REQUIRED_CHANNELS)})", show_alert=True)
+        return
+    
+    if call.data == "user_redeem":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "🔑 **Enter Token:**\nExample: ABC123XYZ789", parse_mode='Markdown')
+        add_message_to_delete(call.message.chat.id, msg.message_id)
+        bot.register_next_step_handler(msg, process_redeem)
+        return
+    
+    if call.data == "user_videos":
+        bot.answer_callback_query(call.id)
+        send_videos_to_user(call.message.chat.id, user_id)
+        return
+    
+    if call.data == "user_token":
+        bot.answer_callback_query(call.id)
+        token_info(call.message)
+        return
+    
+    # Owner callbacks
+    if call.data == "owner_create":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "📌 /create [HOURS] [LIMIT]")
+        add_message_to_delete(call.message.chat.id, msg.message_id)
+        return
+    
+    if call.data == "owner_tokens":
+        bot.answer_callback_query(call.id)
+        list_tokens(call.message)
+        return
+    
+    if call.data == "owner_link":
+        bot.answer_callback_query(call.id)
+        msg = bot.send_message(call.message.chat.id, "📌 /change [LINK]")
+        add_message_to_delete(call.message.chat.id, msg.message_id)
+        return
+    
+    if call.data == "owner_next_batch":
+        bot.answer_callback_query(call.id)
+        next_batch(call.message)
+        return
+
+def process_redeem(message):
+    token = message.text.strip().upper()
+    user_id = message.from_user.id
+    device_id = f"device_{user_id}_{int(time.time())}"
+    
+    success, msg_text, hours = db.redeem_token(token, user_id, device_id)
+    msg = bot.reply_to(message, msg_text)
+    add_message_to_delete(message.chat.id, msg.message_id)
+    
+    if success:
+        send_videos_to_user(message.chat.id, user_id)
+
+# ==================== OWNER COMMANDS ====================
 
 @bot.message_handler(commands=['create'])
 def create_token(message):
@@ -510,7 +700,7 @@ def create_token(message):
     
     parts = message.text.split()
     if len(parts) < 3:
-        msg = bot.reply_to(message, "❌ /create [HOURS] [DEVICE_LIMIT]\nExample: /create 24 100")
+        msg = bot.reply_to(message, "❌ /create [HOURS] [LIMIT]\nExample: /create 24 100")
         add_message_to_delete(message.chat.id, msg.message_id)
         return
     
@@ -589,7 +779,7 @@ def next_batch(message):
         parse_mode='Markdown')
     add_message_to_delete(message.chat.id, msg.message_id)
 
-# ===== USER COMMANDS =====
+# ==================== USER COMMANDS ====================
 
 @bot.message_handler(commands=['redeem'])
 def redeem_token(message):
@@ -641,55 +831,26 @@ def get_videos_command(message):
     user_id = message.from_user.id
     send_videos_to_user(message.chat.id, user_id)
 
-# ===== CALLBACKS =====
-
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    user_id = call.from_user.id
-    is_active = db.check_user_active(user_id)
-    
-    if call.data == "owner_create":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "📌 /create [HOURS] [LIMIT]")
-        add_message_to_delete(call.message.chat.id, msg.message_id)
-    
-    elif call.data == "owner_tokens":
-        bot.answer_callback_query(call.id)
-        list_tokens(call.message)
-    
-    elif call.data == "owner_link":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "📌 /change [LINK]")
-        add_message_to_delete(call.message.chat.id, msg.message_id)
-    
-    elif call.data == "owner_next_batch":
-        bot.answer_callback_query(call.id)
-        next_batch(call.message)
-    
-    elif call.data == "user_redeem":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "🔑 Enter token:")
-        add_message_to_delete(call.message.chat.id, msg.message_id)
-        bot.register_next_step_handler(call.message, process_redeem)
-
-def process_redeem(message):
-    token = message.text.strip().upper()
-    user_id = message.from_user.id
-    device_id = f"device_{user_id}_{int(time.time())}"
-    
-    success, msg_text, hours = db.redeem_token(token, user_id, device_id)
-    msg = bot.reply_to(message, msg_text)
-    add_message_to_delete(message.chat.id, msg.message_id)
-    
-    if success:
-        send_videos_to_user(message.chat.id, user_id)
-
 @bot.message_handler(commands=['help'])
 def help_command(message):
     if message.from_user.id == OWNER_ID:
-        text = "👑 **OWNER HELP**\n\n/create [HOURS] [LIMIT]\n/tokens\n/change [LINK]\n/nextbatch\n/videos"
+        text = """
+👑 **OWNER HELP**
+
+/create [HOURS] [LIMIT] - Create token
+/tokens - List all tokens
+/change [LINK] - Update free token link
+/nextbatch - Force next video batch
+/videos - Send videos
+"""
     else:
-        text = "🔹 **USER HELP**\n\n/redeem [TOKEN]\n/videos\n/tokeninfo"
+        text = """
+🔹 **USER HELP**
+
+/redeem [TOKEN] - Redeem your token
+/videos - Get latest videos
+/tokeninfo - Check token status
+"""
     
     msg = bot.reply_to(message, text, parse_mode='Markdown')
     add_message_to_delete(message.chat.id, msg.message_id)
@@ -703,14 +864,15 @@ def default_handler(message):
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📹 TOKEN VIDEO BOT - NO CHANNEL LINKS                     ║
+    ║   ✨ KORN VIDEOS KING - PREMIUM EDITION ✨                   ║
+    ║   - Join System                                              ║
+    ║   - Sequential Videos                                        ║
+    ║   - Premium Interface                                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
-    print(f"✅ Video Channel: @{VIDEO_CHANNEL}")
-    print(f"✅ Start ID: {START_VIDEO_ID}")
-    print(f"✅ Videos per batch: {VIDEOS_PER_BATCH}")
-    print(f"✅ Update interval: {UPDATE_INTERVAL_HOURS}h")
+    print(f"✅ Channel 1: {REQUIRED_CHANNELS[0]['link']}")
+    print(f"✅ Channel 2: {REQUIRED_CHANNELS[1]['link']}")
     print(f"✅ Bot starting...")
     
     while True:
