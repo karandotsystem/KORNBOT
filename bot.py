@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-✨ KORN VIDEOS KING - PREMIUM EDITION ✨
-Private Channel Request Detection
+✨ KORN VIDEOS KING - FIXED REQUEST DETECTION ✨
 """
 
 import os
@@ -20,10 +19,10 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
 VIDEO_CHANNEL = "latestvideo10"
 
-# ==================== PRIVATE CHANNEL IDs ====================
+# ==================== PRIVATE CHANNELS ====================
 REQUIRED_CHANNELS = [
-    {"id": -1004437461139, "link": "https://t.me/+0tNVyCsuevY4Mzhl", "name": "Channel 1"},
-    {"id": -1004353418790, "link": "https://t.me/+riBFv5MaTOFjNDhl", "name": "Channel 2"}
+    {"id": -1004437461139, "link": "https://t.me/+0tNVyCsuevY4Mzhl", "username": "VATEROFWHOLETG", "name": "Channel 1"},
+    {"id": -1004353418790, "link": "https://t.me/+riBFv5MaTOFjNDhl", "username": "VATEROFWHOLETG2", "name": "Channel 2"}
 ]
 
 DELETE_AFTER_MINUTES = 10
@@ -293,42 +292,18 @@ class Database:
             return False
     
     def update_channel_status(self, user_id, channel_id, joined):
-        """Update individual channel join status"""
         try:
             if channel_id == -1004437461139:
                 self.execute_query('UPDATE users SET channel1_joined = %s WHERE user_id = %s', (1 if joined else 0, user_id))
             elif channel_id == -1004353418790:
                 self.execute_query('UPDATE users SET channel2_joined = %s WHERE user_id = %s', (1 if joined else 0, user_id))
             
-            # Update total joined count
             result = self.fetch_one('SELECT channel1_joined, channel2_joined FROM users WHERE user_id = %s', (user_id,))
             if result:
                 total = result[0] + result[1]
                 self.execute_query('UPDATE users SET joined_channels = %s WHERE user_id = %s', (total, user_id))
         except Exception as e:
             print(f"❌ update_channel_status error: {e}")
-    
-    def check_user_channels(self, user_id):
-        """Check if user has joined channels by checking status"""
-        try:
-            joined_count = 0
-            for channel in REQUIRED_CHANNELS:
-                try:
-                    # Try to get member status using Telegram Bot API
-                    status = bot.get_chat_member(channel['id'], user_id).status
-                    if status in ['member', 'administrator', 'creator']:
-                        joined_count += 1
-                        self.update_channel_status(user_id, channel['id'], True)
-                    else:
-                        self.update_channel_status(user_id, channel['id'], False)
-                except Exception as e:
-                    print(f"❌ Channel check error for {channel['id']}: {e}")
-                    self.update_channel_status(user_id, channel['id'], False)
-            
-            return joined_count >= len(REQUIRED_CHANNELS), joined_count
-        except Exception as e:
-            print(f"❌ check_user_channels error: {e}")
-            return False, 0
     
     def get_user_token(self, user_id):
         try:
@@ -369,25 +344,28 @@ class Database:
 db = Database()
 print("✅ Database ready!")
 
-# ==================== CHANNEL CHECK ====================
+# ==================== CHANNEL CHECK - FIXED ====================
 def check_user_channels(user_id):
     """Check if user has joined required private channels"""
     try:
         joined_count = 0
         for channel in REQUIRED_CHANNELS:
             try:
-                # Get chat member status from Telegram
+                # Using channel ID to check member status
                 status = bot.get_chat_member(channel['id'], user_id).status
-                print(f"[*] Channel {channel['name']} status for user {user_id}: {status}")
+                print(f"[*] Channel {channel['name']} (ID: {channel['id']}) status: {status}")
+                
                 if status in ['member', 'administrator', 'creator']:
                     joined_count += 1
                     db.update_channel_status(user_id, channel['id'], True)
                 else:
                     db.update_channel_status(user_id, channel['id'], False)
+                    
             except Exception as e:
-                print(f"❌ Channel check error: {e}")
+                print(f"❌ Error checking channel {channel['id']}: {e}")
                 db.update_channel_status(user_id, channel['id'], False)
         
+        print(f"[*] User {user_id} joined {joined_count}/{len(REQUIRED_CHANNELS)} channels")
         return joined_count >= len(REQUIRED_CHANNELS), joined_count
     except Exception as e:
         print(f"❌ check_user_channels error: {e}")
@@ -552,7 +530,7 @@ def start(message):
     
     add_message_to_delete(message.chat.id, message.message_id)
     
-    # Check if user has joined required channels
+    # Force check channels
     joined, joined_count = check_user_channels(user_id)
     
     if not joined and user_id != OWNER_ID:
@@ -623,7 +601,6 @@ def start(message):
         msg = bot.reply_to(message, text, reply_markup=markup, parse_mode='Markdown')
         add_message_to_delete(message.chat.id, msg.message_id)
         
-        # Auto send videos
         send_videos_to_user(message.chat.id, user_id)
     else:
         markup = get_premium_menu(user_id)
