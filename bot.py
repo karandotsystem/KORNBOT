@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v4.0 - ENVIRONMENT VARIABLES
-No hardcoded credentials
+📢 TELEGRAM REPORT BOT v5.0 - FINAL WORKING
 """
 
 import os
@@ -19,16 +18,11 @@ from telethon.tl.functions.account import ReportPeerRequest
 import telebot
 from telebot import types as tg_types
 
-# ==================== DISABLE LOGGING ====================
-logging.disable(logging.CRITICAL)
-os.environ['PYTHONWARNINGS'] = 'ignore'
-
-# ==================== CONFIG (FROM ENVIRONMENT) ====================
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc")
-OWNER_ID = int(os.environ.get("OWNER_ID", "8935807032"))
-
-API_ID = int(os.environ.get("API_ID", "31486711"))
-API_HASH = os.environ.get("API_HASH", "1b9f690d42fa6a15e37043ae1b6f03e6")
+# ==================== CONFIG ====================
+BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
+OWNER_ID = 8935807032
+API_ID = 31486711
+API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
 
 # ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -37,20 +31,10 @@ try:
 except:
     pass
 
-# ==================== OTP HANDLER ====================
-otp_sessions = {}
+print("✅ Bot Started!")
 
-@bot.message_handler(func=lambda msg: True)
-def handle_otp_messages(message):
-    chat_id = message.chat.id
-    text = message.text.strip()
-    
-    if chat_id in otp_sessions and otp_sessions[chat_id]["waiting"]:
-        if text.isdigit() and len(text) >= 4:
-            otp_sessions[chat_id]["otp_received"] = text
-            otp_sessions[chat_id]["waiting"] = False
-            bot.reply_to(message, f"✅ OTP received!")
-            return
+# ==================== OTP STORAGE ====================
+otp_sessions = {}  # {chat_id: {"phone": phone, "waiting": True, "otp": None}}
 
 # ==================== DATABASE ====================
 class Database:
@@ -64,10 +48,8 @@ class Database:
         self.accounts.append({
             "phone": phone,
             "session": session_name,
-            "active": True,
             "joined": False,
             "reported": False,
-            "status": "pending",
             "logged_in": False
         })
         return len(self.accounts)
@@ -87,7 +69,6 @@ class Database:
         for acc in self.accounts:
             if acc["phone"] == phone:
                 acc["joined"] = True
-                acc["status"] = "joined"
                 return True
         return False
     
@@ -95,7 +76,6 @@ class Database:
         for acc in self.accounts:
             if acc["phone"] == phone:
                 acc["reported"] = True
-                acc["status"] = "reported"
                 return True
         return False
     
@@ -103,7 +83,6 @@ class Database:
         for acc in self.accounts:
             if acc["phone"] == phone:
                 acc["logged_in"] = True
-                acc["status"] = "logged_in"
                 return True
         return False
     
@@ -123,7 +102,7 @@ class TelegramClientManager:
     
     async def join_channel(self, client, channel_link):
         try:
-            await asyncio.sleep(random.uniform(1.5, 4))
+            await asyncio.sleep(random.uniform(1, 3))
             if "+" in channel_link:
                 invite_hash = channel_link.split("+")[-1]
                 await client(functions.messages.ImportChatInviteRequest(invite_hash))
@@ -131,7 +110,7 @@ class TelegramClientManager:
                 username = channel_link.split("/")[-1]
                 entity = await client.get_entity(f"@{username}")
                 await client(JoinChannelRequest(entity))
-            await asyncio.sleep(random.uniform(2, 5))
+            await asyncio.sleep(random.uniform(1, 3))
             return True
         except:
             return False
@@ -143,9 +122,9 @@ class TelegramClientManager:
             post_id = int(parts[-1])
             
             entity = await client.get_entity(f"@{username}")
-            await asyncio.sleep(random.uniform(2, 5))
+            await asyncio.sleep(random.uniform(1, 3))
             
-            # Report with Child Abuse
+            # Child Abuse Report
             try:
                 from telethon.tl.types import ReportReasonChildAbuse
                 reason1 = ReportReasonChildAbuse()
@@ -159,9 +138,9 @@ class TelegramClientManager:
                 message="Child physical abuse material detected. Immediate removal required."
             ))
             
-            await asyncio.sleep(random.uniform(2, 4))
+            await asyncio.sleep(random.uniform(1, 2))
             
-            # Report with Violence
+            # Violence Report
             try:
                 from telethon.tl.types import ReportReasonViolence
                 reason2 = ReportReasonViolence()
@@ -173,22 +152,6 @@ class TelegramClientManager:
                 id=[post_id],
                 reason=reason2,
                 message="Violence against children."
-            ))
-            
-            await asyncio.sleep(random.uniform(1, 3))
-            
-            # Report with Spam
-            try:
-                from telethon.tl.types import ReportReasonSpam
-                reason3 = ReportReasonSpam()
-            except:
-                reason3 = "spam"
-            
-            await client(functions.messages.ReportRequest(
-                peer=entity,
-                id=[post_id],
-                reason=reason3,
-                message="Multiple reports of child abuse content."
             ))
             
             await asyncio.sleep(random.uniform(1, 2))
@@ -213,7 +176,7 @@ class TelegramClientManager:
 
 manager = TelegramClientManager()
 
-# ==================== OTP LOGIN FUNCTION ====================
+# ==================== OTP LOGIN ====================
 
 async def login_with_otp(phone, session_name, chat_id):
     try:
@@ -228,29 +191,23 @@ async def login_with_otp(phone, session_name, chat_id):
         await client.send_code_request(phone)
         bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
         
-        otp_sessions[chat_id] = {
-            "phone": phone,
-            "client": client,
-            "waiting": True,
-            "otp_received": None
-        }
+        otp_sessions[chat_id] = {"phone": phone, "waiting": True, "otp": None}
         
         timeout = 120
-        start_time = time.time()
-        
+        start = time.time()
         while otp_sessions[chat_id]["waiting"]:
-            if time.time() - start_time > timeout:
-                bot.send_message(chat_id, f"❌ OTP timeout for {phone}")
+            if time.time() - start > timeout:
+                bot.send_message(chat_id, f"❌ OTP timeout")
                 del otp_sessions[chat_id]
                 await client.disconnect()
                 return None, False
             await asyncio.sleep(1)
         
-        otp_code = otp_sessions[chat_id]["otp_received"]
+        otp_code = otp_sessions[chat_id]["otp"]
         del otp_sessions[chat_id]
         
         if not otp_code:
-            bot.send_message(chat_id, f"❌ No OTP for {phone}")
+            bot.send_message(chat_id, f"❌ No OTP")
             await client.disconnect()
             return None, False
         
@@ -260,10 +217,10 @@ async def login_with_otp(phone, session_name, chat_id):
         return client, True
         
     except SessionPasswordNeededError:
-        bot.send_message(chat_id, f"❌ {phone} needs 2FA. Skipping.")
+        bot.send_message(chat_id, f"❌ {phone} needs 2FA")
         return None, False
     except Exception as e:
-        bot.send_message(chat_id, f"❌ {phone} failed: {str(e)[:30]}")
+        bot.send_message(chat_id, f"❌ {phone}: {str(e)[:30]}")
         return None, False
 
 # ==================== BOT COMMANDS ====================
@@ -286,7 +243,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v4.0
+📢 REPORT BOT v5.0
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -299,6 +256,25 @@ Status: {'✅ Running' if db.is_running else '⏸ Idle'}
 4. Start Report
 """
     bot.reply_to(message, text, reply_markup=markup)
+
+# ==================== OTP MESSAGE HANDLER ====================
+
+@bot.message_handler(func=lambda msg: True)
+def handle_all_messages(message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+    
+    # OTP handling
+    if chat_id in otp_sessions and otp_sessions[chat_id]["waiting"]:
+        if text.isdigit() and len(text) >= 4:
+            otp_sessions[chat_id]["otp"] = text
+            otp_sessions[chat_id]["waiting"] = False
+            bot.reply_to(message, "✅ OTP received!")
+            return
+    
+    # If not OTP and not command, ignore
+    if not text.startswith('/') and chat_id not in otp_sessions:
+        pass
 
 # ==================== CALLBACKS ====================
 
@@ -398,13 +374,11 @@ def show_status(message):
     total = len(accounts)
     joined = sum(1 for a in accounts if a.get("joined", False))
     reported = sum(1 for a in accounts if a.get("reported", False))
-    logged_in = sum(1 for a in accounts if a.get("logged_in", False))
     
     text = f"""
 📊 STATUS
 
 Total: {total}
-Logged In: {logged_in}
 Joined: {joined}
 Reported: {reported}
 Channel: {db.current_channel or 'Not Set'}
@@ -412,7 +386,7 @@ Post: {db.current_post or 'Not Set'}
 Running: {'✅' if db.is_running else '❌'}
 """
     for i, acc in enumerate(accounts[:10], 1):
-        s = "✅" if acc.get("reported") else ("📢" if acc.get("joined") else ("🔑" if acc.get("logged_in") else "⏳"))
+        s = "✅" if acc.get("reported") else ("📢" if acc.get("joined") else "⏳")
         text += f"{i}. {s} {acc['phone']}\n"
     
     if total > 10:
@@ -474,7 +448,7 @@ async def run_reports(chat_id):
                 failed += 1
                 continue
             
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(1, 2))
             
             joined = await manager.join_channel(client, channel)
             if not joined:
@@ -484,7 +458,7 @@ async def run_reports(chat_id):
                 continue
             
             db.mark_joined(account['phone'])
-            await asyncio.sleep(random.uniform(3, 8))
+            await asyncio.sleep(random.uniform(2, 4))
             
             reported = await manager.report_post(client, post)
             if reported:
@@ -496,7 +470,7 @@ async def run_reports(chat_id):
                 bot.send_message(chat_id, f"❌ Report failed")
             
             await client.disconnect()
-            await asyncio.sleep(random.uniform(5, 10))
+            await asyncio.sleep(random.uniform(3, 6))
             
         except Exception as e:
             bot.send_message(chat_id, f"❌ Error")
@@ -516,7 +490,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v4.0 - ENVIRONMENT VARIABLES                ║
+    ║   📢 REPORT BOT v5.0 - FINAL WORKING                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
@@ -524,11 +498,12 @@ def main():
     
     os.makedirs("sessions", exist_ok=True)
     
-    try:
-        bot.infinity_polling(timeout=10, long_polling_timeout=10)
-    except:
-        time.sleep(5)
-        main()
+    while True:
+        try:
+            bot.infinity_polling(timeout=10, long_polling_timeout=10)
+        except Exception as e:
+            print(f"Error: {e}")
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
