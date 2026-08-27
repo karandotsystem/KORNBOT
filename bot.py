@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v7.0 - 409 FIXED
+📢 TELEGRAM REPORT BOT v8.0 - FINAL WORKING
 """
 
 import os
 import time
 import random
 import asyncio
-import logging
 import threading
+import logging
 from datetime import datetime
 from telethon import TelegramClient, functions
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
@@ -30,23 +30,14 @@ API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
 
 # ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
-
-# Force remove webhook and stop polling to fix 409
 try:
     bot.remove_webhook()
-    print("✅ Webhook removed")
-except:
-    pass
-
-try:
-    bot.stop_polling()
-    print("✅ Polling stopped")
 except:
     pass
 
 print("✅ Bot Started!")
 
-# ==================== OTP/2FA STORAGE ====================
+# ==================== SESSIONS ====================
 sessions = {}
 
 # ==================== DATABASE ====================
@@ -115,7 +106,7 @@ class TelegramClientManager:
     
     async def join_channel(self, client, channel_link):
         try:
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(1, 2))
             if "+" in channel_link:
                 invite_hash = channel_link.split("+")[-1]
                 await client(functions.messages.ImportChatInviteRequest(invite_hash))
@@ -123,7 +114,7 @@ class TelegramClientManager:
                 username = channel_link.split("/")[-1]
                 entity = await client.get_entity(f"@{username}")
                 await client(JoinChannelRequest(entity))
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(1, 2))
             return True
         except:
             return False
@@ -135,7 +126,7 @@ class TelegramClientManager:
             post_id = int(parts[-1])
             
             entity = await client.get_entity(f"@{username}")
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(1, 2))
             
             try:
                 from telethon.tl.types import ReportReasonChildAbuse
@@ -147,34 +138,10 @@ class TelegramClientManager:
                 peer=entity,
                 id=[post_id],
                 reason=reason1,
-                message="Child physical abuse material detected. Immediate removal required."
+                message="Child physical abuse material detected."
             ))
             
             await asyncio.sleep(random.uniform(1, 2))
-            
-            try:
-                from telethon.tl.types import ReportReasonViolence
-                reason2 = ReportReasonViolence()
-            except:
-                reason2 = "violence"
-            
-            await client(functions.messages.ReportRequest(
-                peer=entity,
-                id=[post_id],
-                reason=reason2,
-                message="Violence against children."
-            ))
-            
-            await asyncio.sleep(random.uniform(1, 2))
-            
-            try:
-                await client(functions.account.ReportPeerRequest(
-                    peer=entity,
-                    reason=reason1,
-                    message="Channel distributing child abuse material."
-                ))
-            except:
-                pass
             
             return True
             
@@ -186,9 +153,9 @@ class TelegramClientManager:
 
 manager = TelegramClientManager()
 
-# ==================== LOGIN WITH OTP + 2FA ====================
+# ==================== LOGIN ====================
 
-async def login_with_otp_2fa(phone, session_name, chat_id):
+async def login_account(phone, session_name, chat_id):
     try:
         client = TelegramClient(f"sessions/{session_name}", API_ID, API_HASH)
         await client.connect()
@@ -199,60 +166,37 @@ async def login_with_otp_2fa(phone, session_name, chat_id):
             return client, True
         
         await client.send_code_request(phone)
-        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
+        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code (or /skip to skip):")
         
-        sessions[chat_id] = {"phone": phone, "client": client, "step": "otp", "waiting": True, "code": None}
+        sessions[chat_id] = {"phone": phone, "client": client, "waiting": True, "code": None}
         
-        timeout = 120
+        timeout = 60
         start = time.time()
         while sessions[chat_id]["waiting"]:
             if time.time() - start > timeout:
-                bot.send_message(chat_id, f"❌ OTP timeout")
+                bot.send_message(chat_id, f"⏱ OTP timeout for {phone}")
                 del sessions[chat_id]
                 await client.disconnect()
                 return None, False
             await asyncio.sleep(1)
         
-        otp_code = sessions[chat_id]["code"]
+        code = sessions[chat_id]["code"]
         del sessions[chat_id]
         
-        if not otp_code:
-            bot.send_message(chat_id, f"❌ No OTP")
+        if not code or code.lower() == "/skip":
+            bot.send_message(chat_id, f"⏭ Skipped {phone}")
             await client.disconnect()
             return None, False
         
         try:
-            await client.sign_in(phone, code=otp_code)
+            await client.sign_in(phone, code=code)
             db.mark_logged_in(phone)
             bot.send_message(chat_id, f"✅ {phone} logged in!")
             return client, True
         except SessionPasswordNeededError:
-            bot.send_message(chat_id, f"🔐 {phone} needs 2FA password.\nSend your 2FA password:")
-            
-            sessions[chat_id] = {"phone": phone, "client": client, "step": "2fa", "waiting": True, "code": None}
-            
-            timeout = 120
-            start = time.time()
-            while sessions[chat_id]["waiting"]:
-                if time.time() - start > timeout:
-                    bot.send_message(chat_id, f"❌ 2FA timeout")
-                    del sessions[chat_id]
-                    await client.disconnect()
-                    return None, False
-                await asyncio.sleep(1)
-            
-            password = sessions[chat_id]["code"]
-            del sessions[chat_id]
-            
-            if not password:
-                bot.send_message(chat_id, f"❌ No password")
-                await client.disconnect()
-                return None, False
-            
-            await client.sign_in(password=password)
-            db.mark_logged_in(phone)
-            bot.send_message(chat_id, f"✅ {phone} logged in with 2FA!")
-            return client, True
+            bot.send_message(chat_id, f"🔐 {phone} needs 2FA. Skipping.")
+            await client.disconnect()
+            return None, False
             
     except Exception as e:
         bot.send_message(chat_id, f"❌ {phone}: {str(e)[:30]}")
@@ -265,13 +209,13 @@ def handle_all_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     
-    if chat_id in sessions and sessions[chat_id]["waiting"]:
+    if chat_id in sessions and sessions[chat_id].get("waiting", False):
         sessions[chat_id]["code"] = text
         sessions[chat_id]["waiting"] = False
         bot.reply_to(message, "✅ Received!")
         return
 
-# ==================== BOT COMMANDS ====================
+# ==================== COMMANDS ====================
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -291,7 +235,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v7.0
+📢 REPORT BOT v8.0
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -450,6 +394,7 @@ Channel: {channel}
 Post: {post}
 
 ⚠️ Send OTP when prompted.
+Type /skip to skip account.
 """)
     
     db.is_running = True
@@ -467,7 +412,7 @@ async def run_reports(chat_id):
         try:
             bot.send_message(chat_id, f"📊 {i}/{len(accounts)}: {account['phone']}")
             
-            client, logged_in = await login_with_otp_2fa(
+            client, logged_in = await login_account(
                 account['phone'], 
                 account['session'], 
                 chat_id
@@ -487,7 +432,7 @@ async def run_reports(chat_id):
                 continue
             
             db.mark_joined(account['phone'])
-            await asyncio.sleep(random.uniform(2, 4))
+            await asyncio.sleep(random.uniform(2, 3))
             
             reported = await manager.report_post(client, post)
             if reported:
@@ -499,7 +444,7 @@ async def run_reports(chat_id):
                 bot.send_message(chat_id, f"❌ Report failed")
             
             await client.disconnect()
-            await asyncio.sleep(random.uniform(3, 6))
+            await asyncio.sleep(random.uniform(3, 5))
             
         except Exception as e:
             bot.send_message(chat_id, f"❌ Error")
@@ -519,7 +464,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v7.0 - 409 FIXED                           ║
+    ║   📢 REPORT BOT v8.0 - FINAL WORKING                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
@@ -529,7 +474,6 @@ def main():
     
     while True:
         try:
-            # FIX: Use polling instead of infinity_polling
             bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
             print(f"Error: {e}")
