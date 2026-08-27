@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v5.0 - FINAL WORKING
+📢 TELEGRAM REPORT BOT v6.0 - 2FA SUPPORT
+Child Physical Abuse Reporting
 """
 
 import os
@@ -33,8 +34,8 @@ except:
 
 print("✅ Bot Started!")
 
-# ==================== OTP STORAGE ====================
-otp_sessions = {}  # {chat_id: {"phone": phone, "waiting": True, "otp": None}}
+# ==================== OTP/2FA STORAGE ====================
+sessions = {}  # {chat_id: {"phone": phone, "client": client, "step": "otp|2fa", "waiting": True, "code": None}}
 
 # ==================== DATABASE ====================
 class Database:
@@ -176,9 +177,9 @@ class TelegramClientManager:
 
 manager = TelegramClientManager()
 
-# ==================== OTP LOGIN ====================
+# ==================== LOGIN WITH OTP + 2FA ====================
 
-async def login_with_otp(phone, session_name, chat_id):
+async def login_with_otp_2fa(phone, session_name, chat_id):
     try:
         client = TelegramClient(f"sessions/{session_name}", API_ID, API_HASH)
         await client.connect()
@@ -188,40 +189,88 @@ async def login_with_otp(phone, session_name, chat_id):
             bot.send_message(chat_id, f"✅ {phone} already logged in!")
             return client, True
         
+        # Send OTP request
         await client.send_code_request(phone)
         bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
         
-        otp_sessions[chat_id] = {"phone": phone, "waiting": True, "otp": None}
+        # Wait for OTP
+        sessions[chat_id] = {"phone": phone, "client": client, "step": "otp", "waiting": True, "code": None}
         
         timeout = 120
         start = time.time()
-        while otp_sessions[chat_id]["waiting"]:
+        while sessions[chat_id]["waiting"]:
             if time.time() - start > timeout:
                 bot.send_message(chat_id, f"❌ OTP timeout")
-                del otp_sessions[chat_id]
+                del sessions[chat_id]
                 await client.disconnect()
                 return None, False
             await asyncio.sleep(1)
         
-        otp_code = otp_sessions[chat_id]["otp"]
-        del otp_sessions[chat_id]
+        otp_code = sessions[chat_id]["code"]
+        del sessions[chat_id]
         
         if not otp_code:
             bot.send_message(chat_id, f"❌ No OTP")
             await client.disconnect()
             return None, False
         
-        await client.sign_in(phone, code=otp_code)
-        db.mark_logged_in(phone)
-        bot.send_message(chat_id, f"✅ {phone} logged in!")
-        return client, True
-        
-    except SessionPasswordNeededError:
-        bot.send_message(chat_id, f"❌ {phone} needs 2FA")
-        return None, False
+        # Try to sign in with OTP
+        try:
+            await client.sign_in(phone, code=otp_code)
+            db.mark_logged_in(phone)
+            bot.send_message(chat_id, f"✅ {phone} logged in!")
+            return client, True
+        except SessionPasswordNeededError:
+            # 2FA Required - ask for password
+            bot.send_message(chat_id, f"🔐 {phone} needs 2FA password.\nSend your 2FA password:")
+            
+            sessions[chat_id] = {"phone": phone, "client": client, "step": "2fa", "waiting": True, "code": None}
+            
+            timeout = 120
+            start = time.time()
+            while sessions[chat_id]["waiting"]:
+                if time.time() - start > timeout:
+                    bot.send_message(chat_id, f"❌ 2FA timeout")
+                    del sessions[chat_id]
+                    await client.disconnect()
+                    return None, False
+                await asyncio.sleep(1)
+            
+            password = sessions[chat_id]["code"]
+            del sessions[chat_id]
+            
+            if not password:
+                bot.send_message(chat_id, f"❌ No password")
+                await client.disconnect()
+                return None, False
+            
+            await client.sign_in(password=password)
+            db.mark_logged_in(phone)
+            bot.send_message(chat_id, f"✅ {phone} logged in with 2FA!")
+            return client, True
+            
     except Exception as e:
         bot.send_message(chat_id, f"❌ {phone}: {str(e)[:30]}")
         return None, False
+
+# ==================== MESSAGE HANDLER (OTP + 2FA) ====================
+
+@bot.message_handler(func=lambda msg: True)
+def handle_all_messages(message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+    
+    # Check if waiting for OTP or 2FA
+    if chat_id in sessions and sessions[chat_id]["waiting"]:
+        # OTP or 2FA code/password
+        sessions[chat_id]["code"] = text
+        sessions[chat_id]["waiting"] = False
+        bot.reply_to(message, "✅ Received!")
+        return
+    
+    # If not OTP/2FA and not command, ignore
+    if not text.startswith('/') and chat_id not in sessions:
+        pass
 
 # ==================== BOT COMMANDS ====================
 
@@ -243,7 +292,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v5.0
+📢 REPORT BOT v6.0 - 2FA SUPPORT
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -256,25 +305,6 @@ Status: {'✅ Running' if db.is_running else '⏸ Idle'}
 4. Start Report
 """
     bot.reply_to(message, text, reply_markup=markup)
-
-# ==================== OTP MESSAGE HANDLER ====================
-
-@bot.message_handler(func=lambda msg: True)
-def handle_all_messages(message):
-    chat_id = message.chat.id
-    text = message.text.strip()
-    
-    # OTP handling
-    if chat_id in otp_sessions and otp_sessions[chat_id]["waiting"]:
-        if text.isdigit() and len(text) >= 4:
-            otp_sessions[chat_id]["otp"] = text
-            otp_sessions[chat_id]["waiting"] = False
-            bot.reply_to(message, "✅ OTP received!")
-            return
-    
-    # If not OTP and not command, ignore
-    if not text.startswith('/') and chat_id not in otp_sessions:
-        pass
 
 # ==================== CALLBACKS ====================
 
@@ -421,6 +451,7 @@ Channel: {channel}
 Post: {post}
 
 ⚠️ Send OTP when prompted.
+If 2FA enabled, send password when asked.
 """)
     
     db.is_running = True
@@ -438,7 +469,7 @@ async def run_reports(chat_id):
         try:
             bot.send_message(chat_id, f"📊 {i}/{len(accounts)}: {account['phone']}")
             
-            client, logged_in = await login_with_otp(
+            client, logged_in = await login_with_otp_2fa(
                 account['phone'], 
                 account['session'], 
                 chat_id
@@ -490,7 +521,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v5.0 - FINAL WORKING                        ║
+    ║   📢 REPORT BOT v6.0 - 2FA SUPPORT                          ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
