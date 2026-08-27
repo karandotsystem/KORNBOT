@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v8.0 - FINAL WORKING
+📢 TELEGRAM REPORT BOT v9.0 - DIRECT WORKING
 """
 
 import os
@@ -38,7 +38,7 @@ except:
 print("✅ Bot Started!")
 
 # ==================== SESSIONS ====================
-sessions = {}
+waiting_sessions = {}
 
 # ==================== DATABASE ====================
 class Database:
@@ -48,13 +48,13 @@ class Database:
         self.current_post = None
         self.is_running = False
     
-    def add_account(self, phone, session_name):
+    def add_account(self, phone):
+        session_name = f"session_{len(self.accounts)}_{int(time.time())}"
         self.accounts.append({
             "phone": phone,
             "session": session_name,
             "joined": False,
-            "reported": False,
-            "logged_in": False
+            "reported": False
         })
         return len(self.accounts)
     
@@ -83,13 +83,6 @@ class Database:
                 return True
         return False
     
-    def mark_logged_in(self, phone):
-        for acc in self.accounts:
-            if acc["phone"] == phone:
-                acc["logged_in"] = True
-                return True
-        return False
-    
     def reset_all(self):
         self.accounts = []
         self.current_channel = None
@@ -106,7 +99,6 @@ class TelegramClientManager:
     
     async def join_channel(self, client, channel_link):
         try:
-            await asyncio.sleep(random.uniform(1, 2))
             if "+" in channel_link:
                 invite_hash = channel_link.split("+")[-1]
                 await client(functions.messages.ImportChatInviteRequest(invite_hash))
@@ -114,7 +106,6 @@ class TelegramClientManager:
                 username = channel_link.split("/")[-1]
                 entity = await client.get_entity(f"@{username}")
                 await client(JoinChannelRequest(entity))
-            await asyncio.sleep(random.uniform(1, 2))
             return True
         except:
             return False
@@ -124,30 +115,15 @@ class TelegramClientManager:
             parts = post_link.split("/")
             username = parts[-2]
             post_id = int(parts[-1])
-            
             entity = await client.get_entity(f"@{username}")
-            await asyncio.sleep(random.uniform(1, 2))
-            
-            try:
-                from telethon.tl.types import ReportReasonChildAbuse
-                reason1 = ReportReasonChildAbuse()
-            except:
-                reason1 = "child_abuse"
             
             await client(functions.messages.ReportRequest(
                 peer=entity,
                 id=[post_id],
-                reason=reason1,
+                reason="child_abuse",
                 message="Child physical abuse material detected."
             ))
-            
-            await asyncio.sleep(random.uniform(1, 2))
-            
             return True
-            
-        except FloodWaitError as e:
-            await asyncio.sleep(e.seconds)
-            return False
         except:
             return False
 
@@ -161,36 +137,35 @@ async def login_account(phone, session_name, chat_id):
         await client.connect()
         
         if await client.is_user_authorized():
-            db.mark_logged_in(phone)
             bot.send_message(chat_id, f"✅ {phone} already logged in!")
             return client, True
         
         await client.send_code_request(phone)
-        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code (or /skip to skip):")
+        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
         
-        sessions[chat_id] = {"phone": phone, "client": client, "waiting": True, "code": None}
+        waiting_sessions[chat_id] = {"phone": phone, "waiting": True}
         
+        # Wait for OTP (max 60 seconds)
         timeout = 60
         start = time.time()
-        while sessions[chat_id]["waiting"]:
+        code = None
+        
+        while waiting_sessions.get(chat_id, {}).get("waiting", False):
             if time.time() - start > timeout:
-                bot.send_message(chat_id, f"⏱ OTP timeout for {phone}")
-                del sessions[chat_id]
-                await client.disconnect()
-                return None, False
+                break
             await asyncio.sleep(1)
         
-        code = sessions[chat_id]["code"]
-        del sessions[chat_id]
+        if chat_id in waiting_sessions:
+            code = waiting_sessions[chat_id].get("code")
+            del waiting_sessions[chat_id]
         
-        if not code or code.lower() == "/skip":
-            bot.send_message(chat_id, f"⏭ Skipped {phone}")
+        if not code:
+            bot.send_message(chat_id, f"⏱ OTP timeout for {phone}")
             await client.disconnect()
             return None, False
         
         try:
             await client.sign_in(phone, code=code)
-            db.mark_logged_in(phone)
             bot.send_message(chat_id, f"✅ {phone} logged in!")
             return client, True
         except SessionPasswordNeededError:
@@ -209,11 +184,11 @@ def handle_all_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     
-    if chat_id in sessions and sessions[chat_id].get("waiting", False):
-        sessions[chat_id]["code"] = text
-        sessions[chat_id]["waiting"] = False
+    # OTP handling
+    if chat_id in waiting_sessions:
+        waiting_sessions[chat_id]["code"] = text
+        waiting_sessions[chat_id]["waiting"] = False
         bot.reply_to(message, "✅ Received!")
-        return
 
 # ==================== COMMANDS ====================
 
@@ -235,7 +210,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v8.0
+📢 REPORT BOT v9.0
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -305,8 +280,7 @@ def process_accounts(message):
     for phone in phones:
         phone = phone.strip()
         if phone and phone.startswith('+'):
-            session_name = f"session_{added}_{int(time.time())}"
-            db.add_account(phone, session_name)
+            db.add_account(phone)
             added += 1
     
     bot.reply_to(message, f"✅ Added {added} accounts. Total: {len(db.get_accounts())}")
@@ -394,7 +368,6 @@ Channel: {channel}
 Post: {post}
 
 ⚠️ Send OTP when prompted.
-Type /skip to skip account.
 """)
     
     db.is_running = True
@@ -422,8 +395,6 @@ async def run_reports(chat_id):
                 failed += 1
                 continue
             
-            await asyncio.sleep(random.uniform(1, 2))
-            
             joined = await manager.join_channel(client, channel)
             if not joined:
                 bot.send_message(chat_id, f"❌ Join failed")
@@ -432,7 +403,6 @@ async def run_reports(chat_id):
                 continue
             
             db.mark_joined(account['phone'])
-            await asyncio.sleep(random.uniform(2, 3))
             
             reported = await manager.report_post(client, post)
             if reported:
@@ -444,7 +414,6 @@ async def run_reports(chat_id):
                 bot.send_message(chat_id, f"❌ Report failed")
             
             await client.disconnect()
-            await asyncio.sleep(random.uniform(3, 5))
             
         except Exception as e:
             bot.send_message(chat_id, f"❌ Error")
@@ -464,7 +433,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v8.0 - FINAL WORKING                        ║
+    ║   📢 REPORT BOT v9.0 - DIRECT WORKING                       ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
