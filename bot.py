@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v6.0 - 2FA SUPPORT
-Child Physical Abuse Reporting
+📢 TELEGRAM REPORT BOT v7.0 - 409 FIXED
 """
 
 import os
@@ -19,6 +18,10 @@ from telethon.tl.functions.account import ReportPeerRequest
 import telebot
 from telebot import types as tg_types
 
+# ==================== DISABLE LOGGING ====================
+logging.disable(logging.CRITICAL)
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
 # ==================== CONFIG ====================
 BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 OWNER_ID = 8935807032
@@ -27,15 +30,24 @@ API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
 
 # ==================== BOT SETUP ====================
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# Force remove webhook and stop polling to fix 409
 try:
     bot.remove_webhook()
+    print("✅ Webhook removed")
+except:
+    pass
+
+try:
+    bot.stop_polling()
+    print("✅ Polling stopped")
 except:
     pass
 
 print("✅ Bot Started!")
 
 # ==================== OTP/2FA STORAGE ====================
-sessions = {}  # {chat_id: {"phone": phone, "client": client, "step": "otp|2fa", "waiting": True, "code": None}}
+sessions = {}
 
 # ==================== DATABASE ====================
 class Database:
@@ -125,7 +137,6 @@ class TelegramClientManager:
             entity = await client.get_entity(f"@{username}")
             await asyncio.sleep(random.uniform(1, 3))
             
-            # Child Abuse Report
             try:
                 from telethon.tl.types import ReportReasonChildAbuse
                 reason1 = ReportReasonChildAbuse()
@@ -141,7 +152,6 @@ class TelegramClientManager:
             
             await asyncio.sleep(random.uniform(1, 2))
             
-            # Violence Report
             try:
                 from telethon.tl.types import ReportReasonViolence
                 reason2 = ReportReasonViolence()
@@ -157,7 +167,6 @@ class TelegramClientManager:
             
             await asyncio.sleep(random.uniform(1, 2))
             
-            # Peer report
             try:
                 await client(functions.account.ReportPeerRequest(
                     peer=entity,
@@ -189,11 +198,9 @@ async def login_with_otp_2fa(phone, session_name, chat_id):
             bot.send_message(chat_id, f"✅ {phone} already logged in!")
             return client, True
         
-        # Send OTP request
         await client.send_code_request(phone)
         bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
         
-        # Wait for OTP
         sessions[chat_id] = {"phone": phone, "client": client, "step": "otp", "waiting": True, "code": None}
         
         timeout = 120
@@ -214,14 +221,12 @@ async def login_with_otp_2fa(phone, session_name, chat_id):
             await client.disconnect()
             return None, False
         
-        # Try to sign in with OTP
         try:
             await client.sign_in(phone, code=otp_code)
             db.mark_logged_in(phone)
             bot.send_message(chat_id, f"✅ {phone} logged in!")
             return client, True
         except SessionPasswordNeededError:
-            # 2FA Required - ask for password
             bot.send_message(chat_id, f"🔐 {phone} needs 2FA password.\nSend your 2FA password:")
             
             sessions[chat_id] = {"phone": phone, "client": client, "step": "2fa", "waiting": True, "code": None}
@@ -253,24 +258,18 @@ async def login_with_otp_2fa(phone, session_name, chat_id):
         bot.send_message(chat_id, f"❌ {phone}: {str(e)[:30]}")
         return None, False
 
-# ==================== MESSAGE HANDLER (OTP + 2FA) ====================
+# ==================== MESSAGE HANDLER ====================
 
 @bot.message_handler(func=lambda msg: True)
 def handle_all_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     
-    # Check if waiting for OTP or 2FA
     if chat_id in sessions and sessions[chat_id]["waiting"]:
-        # OTP or 2FA code/password
         sessions[chat_id]["code"] = text
         sessions[chat_id]["waiting"] = False
         bot.reply_to(message, "✅ Received!")
         return
-    
-    # If not OTP/2FA and not command, ignore
-    if not text.startswith('/') and chat_id not in sessions:
-        pass
 
 # ==================== BOT COMMANDS ====================
 
@@ -292,7 +291,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v6.0 - 2FA SUPPORT
+📢 REPORT BOT v7.0
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -451,7 +450,6 @@ Channel: {channel}
 Post: {post}
 
 ⚠️ Send OTP when prompted.
-If 2FA enabled, send password when asked.
 """)
     
     db.is_running = True
@@ -521,7 +519,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v6.0 - 2FA SUPPORT                          ║
+    ║   📢 REPORT BOT v7.0 - 409 FIXED                           ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
@@ -531,7 +529,8 @@ def main():
     
     while True:
         try:
-            bot.infinity_polling(timeout=10, long_polling_timeout=10)
+            # FIX: Use polling instead of infinity_polling
+            bot.polling(none_stop=True, interval=0, timeout=20)
         except Exception as e:
             print(f"Error: {e}")
             time.sleep(5)
