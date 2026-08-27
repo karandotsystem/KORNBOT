@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v3.0 - OTP LOGIN SUPPORT
+📢 TELEGRAM REPORT BOT v3.1 - OTP FIXED
 Child Physical Abuse Reporting
 """
 
@@ -9,6 +9,7 @@ import time
 import random
 import asyncio
 import logging
+import threading
 from datetime import datetime
 from telethon import TelegramClient, functions
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
@@ -36,6 +37,24 @@ try:
 except:
     pass
 
+# ==================== OTP HANDLER ====================
+otp_sessions = {}  # {chat_id: {"phone": phone, "client": client, "waiting": True, "otp_received": None}}
+
+@bot.message_handler(func=lambda msg: True)
+def handle_otp_messages(message):
+    """Handle OTP messages globally"""
+    chat_id = message.chat.id
+    text = message.text.strip()
+    
+    # Check if this chat is waiting for OTP
+    if chat_id in otp_sessions and otp_sessions[chat_id]["waiting"]:
+        # Check if message is a number (OTP)
+        if text.isdigit() and len(text) >= 4:
+            otp_sessions[chat_id]["otp_received"] = text
+            otp_sessions[chat_id]["waiting"] = False
+            bot.reply_to(message, f"✅ OTP received: {text[:3]}***")
+            return
+
 # ==================== DATABASE ====================
 class Database:
     def __init__(self):
@@ -43,7 +62,6 @@ class Database:
         self.current_channel = None
         self.current_post = None
         self.is_running = False
-        self.otp_sessions = {}  # Store OTP waiting sessions
     
     def add_account(self, phone, session_name):
         self.accounts.append({
@@ -53,7 +71,6 @@ class Database:
             "joined": False,
             "reported": False,
             "status": "pending",
-            "otp_sent": False,
             "logged_in": False
         })
         return len(self.accounts)
@@ -98,7 +115,6 @@ class Database:
         self.current_channel = None
         self.current_post = None
         self.is_running = False
-        self.otp_sessions = {}
 
 db = Database()
 
@@ -107,36 +123,6 @@ class TelegramClientManager:
     def __init__(self):
         self.api_id = API_ID
         self.api_hash = API_HASH
-        self.pending_clients = {}  # phone -> client
-    
-    async def create_client(self, phone, session_name):
-        """Create client but don't start (for OTP)"""
-        client = TelegramClient(f"sessions/{session_name}", self.api_id, self.api_hash)
-        return client
-    
-    async def start_client_with_otp(self, phone, session_name, otp_code):
-        """Start client with OTP"""
-        client = TelegramClient(f"sessions/{session_name}", self.api_id, self.api_hash)
-        try:
-            await client.start(phone=phone, code_callback=lambda: otp_code)
-            return client, True, None
-        except SessionPasswordNeededError:
-            return client, False, "2FA Required"
-        except Exception as e:
-            return client, False, str(e)
-    
-    async def request_otp(self, phone, session_name):
-        """Request OTP and return client"""
-        client = TelegramClient(f"sessions/{session_name}", self.api_id, self.api_hash)
-        try:
-            await client.connect()
-            if not await client.is_user_authorized():
-                await client.send_code_request(phone)
-                return client, True, None
-            else:
-                return client, True, "Already logged in"
-        except Exception as e:
-            return client, False, str(e)
     
     async def join_channel(self, client, channel_link):
         try:
@@ -230,6 +216,64 @@ class TelegramClientManager:
 
 manager = TelegramClientManager()
 
+# ==================== OTP LOGIN FUNCTION ====================
+
+async def login_with_otp(phone, session_name, chat_id):
+    """Login with OTP - waits for user to send OTP"""
+    try:
+        client = TelegramClient(f"sessions/{session_name}", API_ID, API_HASH)
+        await client.connect()
+        
+        if await client.is_user_authorized():
+            db.mark_logged_in(phone)
+            bot.send_message(chat_id, f"✅ {phone} already logged in!")
+            return client, True
+        
+        # Send OTP request
+        await client.send_code_request(phone)
+        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code (4-6 digits):")
+        
+        # Store session for OTP
+        otp_sessions[chat_id] = {
+            "phone": phone,
+            "client": client,
+            "waiting": True,
+            "otp_received": None
+        }
+        
+        # Wait for OTP (max 120 seconds)
+        timeout = 120
+        start_time = time.time()
+        
+        while otp_sessions[chat_id]["waiting"]:
+            if time.time() - start_time > timeout:
+                bot.send_message(chat_id, f"❌ OTP timeout for {phone}")
+                del otp_sessions[chat_id]
+                await client.disconnect()
+                return None, False
+            await asyncio.sleep(1)
+        
+        otp_code = otp_sessions[chat_id]["otp_received"]
+        del otp_sessions[chat_id]
+        
+        if not otp_code:
+            bot.send_message(chat_id, f"❌ No OTP received for {phone}")
+            await client.disconnect()
+            return None, False
+        
+        # Complete login
+        await client.sign_in(phone, code=otp_code)
+        db.mark_logged_in(phone)
+        bot.send_message(chat_id, f"✅ {phone} logged in successfully!")
+        return client, True
+        
+    except SessionPasswordNeededError:
+        bot.send_message(chat_id, f"❌ {phone} requires 2FA password. Skipping.")
+        return None, False
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ {phone} login failed: {str(e)[:50]}")
+        return None, False
+
 # ==================== BOT COMMANDS ====================
 
 @bot.message_handler(commands=['start'])
@@ -250,19 +294,19 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v3.0 - OTP SUPPORT
+📢 REPORT BOT v3.1 - OTP FIXED
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
 Post: {db.current_post or 'Not Set'}
 Status: {'✅ Running' if db.is_running else '⏸ Idle'}
 
-1. Add Accounts (with OTP support)
+1. Add Accounts
 2. Set Channel
 3. Set Post
 4. Start Report
 
-⚠️ You will receive OTP on each phone number.
+⚠️ OTP will be requested for each account.
 """
     bot.reply_to(message, text, reply_markup=markup)
 
@@ -326,7 +370,7 @@ def process_accounts(message):
             db.add_account(phone, session_name)
             added += 1
     
-    bot.reply_to(message, f"✅ Added {added} accounts. Total: {len(db.get_accounts())}\n\nNow set channel and post, then Start Report.")
+    bot.reply_to(message, f"✅ Added {added} accounts. Total: {len(db.get_accounts())}")
     start(message)
 
 def process_channel(message):
@@ -388,51 +432,6 @@ Accounts:
     
     bot.send_message(message.chat.id, text)
 
-# ==================== OTP HANDLER ====================
-
-async def login_account_with_otp(phone, session_name, chat_id):
-    """Login with OTP and return client"""
-    try:
-        # Step 1: Request OTP
-        client = TelegramClient(f"sessions/{session_name}", API_ID, API_HASH)
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            # Send OTP request
-            await client.send_code_request(phone)
-            
-            # Ask user for OTP
-            bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
-            
-            # Wait for OTP response
-            def wait_for_otp(msg):
-                return msg.text.isdigit() and len(msg.text) >= 4
-            
-            otp_msg = await bot.wait_for_message(chat_id, timeout=120, filters=wait_for_otp)
-            if not otp_msg:
-                bot.send_message(chat_id, f"❌ OTP timeout for {phone}")
-                await client.disconnect()
-                return None, False
-            
-            otp_code = otp_msg.text.strip()
-            
-            # Complete login
-            await client.sign_in(phone, code=otp_code)
-            db.mark_logged_in(phone)
-            bot.send_message(chat_id, f"✅ {phone} logged in successfully!")
-            return client, True
-        else:
-            db.mark_logged_in(phone)
-            bot.send_message(chat_id, f"✅ {phone} already logged in!")
-            return client, True
-            
-    except SessionPasswordNeededError:
-        bot.send_message(chat_id, f"❌ {phone} requires 2FA password. Skipping.")
-        return None, False
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ {phone} login failed: {str(e)[:50]}")
-        return None, False
-
 # ==================== REPORT ENGINE ====================
 
 def start_report_process(message):
@@ -453,22 +452,20 @@ def start_report_process(message):
         return
     
     bot.reply_to(message, f"""
-🚀 STARTING REPORT PROCESS
+🚀 STARTING REPORT
 
 Accounts: {len(accounts)}
 Channel: {channel}
 Post: {post}
 
 ⚠️ OTP will be requested for each account.
-Please send OTP when prompted.
+Send OTP when prompted.
 """)
     
     db.is_running = True
-    import threading
-    thread = threading.Thread(target=lambda: asyncio.run(run_reports_with_otp(message.chat.id)), daemon=True)
-    thread.start()
+    threading.Thread(target=lambda: asyncio.run(run_reports(message.chat.id)), daemon=True).start()
 
-async def run_reports_with_otp(chat_id):
+async def run_reports(chat_id):
     accounts = db.get_accounts()
     channel = db.current_channel
     post = db.current_post
@@ -481,7 +478,7 @@ async def run_reports_with_otp(chat_id):
             bot.send_message(chat_id, f"📊 {i}/{len(accounts)}: {account['phone']}")
             
             # Login with OTP
-            client, logged_in = await login_account_with_otp(
+            client, logged_in = await login_with_otp(
                 account['phone'], 
                 account['session'], 
                 chat_id
@@ -496,7 +493,7 @@ async def run_reports_with_otp(chat_id):
             # Join channel
             joined = await manager.join_channel(client, channel)
             if not joined:
-                bot.send_message(chat_id, f"❌ {i}: Join failed")
+                bot.send_message(chat_id, f"❌ Join failed for {account['phone']}")
                 failed += 1
                 await client.disconnect()
                 continue
@@ -509,16 +506,16 @@ async def run_reports_with_otp(chat_id):
             if reported:
                 success += 1
                 db.mark_reported(account['phone'])
-                bot.send_message(chat_id, f"✅ {i}: Report sent!")
+                bot.send_message(chat_id, f"✅ {account['phone']}: Report sent!")
             else:
                 failed += 1
-                bot.send_message(chat_id, f"❌ {i}: Report failed")
+                bot.send_message(chat_id, f"❌ {account['phone']}: Report failed")
             
             await client.disconnect()
             await asyncio.sleep(random.uniform(5, 10))
             
         except Exception as e:
-            bot.send_message(chat_id, f"❌ {i}: Error")
+            bot.send_message(chat_id, f"❌ {account['phone']}: Error")
             failed += 1
     
     db.is_running = False
@@ -537,7 +534,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v3.0 - OTP SUPPORT                          ║
+    ║   📢 REPORT BOT v3.1 - OTP FIXED                           ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
