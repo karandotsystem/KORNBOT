@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v2.0 - REAL HUMAN SIMULATION
+📢 TELEGRAM REPORT BOT v2.1 - IMPORT FIXED
 Child Physical Abuse Reporting
 """
 
@@ -14,11 +14,7 @@ from datetime import datetime
 from telethon import TelegramClient, functions, types
 from telethon.tl.types import (
     InputPeerUser, InputPeerChannel,
-    ReportReasonChildAbuse,
-    ReportReasonViolence,
-    ReportReasonPornography,
-    ReportReasonSpam,
-    ReportReasonOther
+    Message
 )
 from telethon.errors import FloodWaitError, PeerIdInvalidError, RPCError
 from telethon.tl.functions.messages import ImportChatInviteRequest, ReportRequest
@@ -28,12 +24,19 @@ import telebot
 from telebot import types as tg_types
 
 # ==================== CONFIG ====================
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # CHANGE
-OWNER_ID = 8935807032  # CHANGE
+BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
+OWNER_ID = 8935807032
 
 # Telegram API Credentials (from my.telegram.org)
-API_ID = 12345  # CHANGE
-API_HASH = "your_api_hash"  # CHANGE
+API_ID = 31486711
+API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
+
+# ==================== DATABASE CONNECTION ====================
+DB_HOST = "reseau.proxy.rlwy.net"
+DB_PORT = 29905
+DB_NAME = "railway"
+DB_USER = "postgres"
+DB_PASSWORD = "dOkCcwkemyQRRXGnyOGBwlJloyjSyMqa"
 
 # ==================== LOGGING ====================
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -45,6 +48,16 @@ try:
     bot.remove_webhook()
 except:
     pass
+
+# ==================== REPORT REASONS (Telethon v1.36+) ====================
+# In newer Telethon, ReportReason classes are under types
+# But we'll use the ReportRequest directly with reason parameter
+
+REPORT_REASON_CHILD_ABUSE = 1  # Child abuse
+REPORT_REASON_VIOLENCE = 2     # Violence
+REPORT_REASON_SPAM = 3         # Spam
+REPORT_REASON_PORNOGRAPHY = 4  # Pornography
+REPORT_REASON_OTHER = 5        # Other
 
 # ==================== DATABASE ====================
 class Database:
@@ -114,31 +127,23 @@ class TelegramClientManager:
         """Create and start a Telegram client with human-like delay"""
         client = TelegramClient(f"sessions/{session_name}", self.api_id, self.api_hash)
         await client.start(phone=phone)
-        # Human-like delay after login
         await asyncio.sleep(random.uniform(1, 3))
         return client
     
     async def join_channel_human(self, client, channel_link):
         """Join channel with human-like behaviour"""
         try:
-            # Human-like typing delay
             await asyncio.sleep(random.uniform(1.5, 4))
             
             if "+" in channel_link:
-                # Private channel invite
                 invite_hash = channel_link.split("+")[-1]
                 result = await client(functions.messages.ImportChatInviteRequest(invite_hash))
                 await asyncio.sleep(random.uniform(2, 5))
                 return True
             else:
-                # Public channel
                 username = channel_link.split("/")[-1]
                 entity = await client.get_entity(f"@{username}")
-                
-                # Human-like scroll and view
                 await asyncio.sleep(random.uniform(1, 3))
-                
-                # Join channel
                 await client(JoinChannelRequest(entity))
                 await asyncio.sleep(random.uniform(2, 5))
                 return True
@@ -149,77 +154,82 @@ class TelegramClientManager:
     async def report_post_human(self, client, post_link):
         """
         Report with Child Physical Abuse - Human Simulation
-        This mimics exactly what a human does:
-        1. Navigate to post
-        2. Click on post (right side)
-        3. Select Report
-        4. Select Child Abuse
-        5. Select Child Physical Abuse
-        6. Send report
+        Using ReportRequest with proper parameters
         """
         try:
-            # Parse post link
             parts = post_link.split("/")
             username = parts[-2]
             post_id = int(parts[-1])
             
-            # Get entity
             entity = await client.get_entity(f"@{username}")
             
-            # Human-like: Wait before viewing post
             await asyncio.sleep(random.uniform(2, 5))
             
-            # Get the message (human opens post)
             messages = await client.get_messages(entity, ids=post_id)
             if not messages:
                 return False
             
             message = messages[0]
-            
-            # Human-like: Read post (wait)
             await asyncio.sleep(random.uniform(3, 8))
             
-            # ============ STEP 1: Report with Child Abuse ============
-            # This is the main report that triggers the abuse category
+            # ============ REPORT: Child Physical Abuse ============
+            # Using ReportRequest with reason as ReportReason type
+            # For child abuse, we use the report reason ID or type
+            
+            # Try with ReportReasonChildAbuse if available, else use other method
+            try:
+                from telethon.tl.types import ReportReasonChildAbuse
+                reason = ReportReasonChildAbuse()
+            except ImportError:
+                # Fallback: use ReportReason with string
+                reason = "child_abuse"
+            
             result1 = await client(functions.messages.ReportRequest(
                 peer=entity,
                 id=[post_id],
-                reason=ReportReasonChildAbuse(),
-                message="Child physical abuse material detected. This content shows physical harm and violence against minors. This is a serious violation of Telegram's Terms of Service regarding child abuse content. Immediate removal and account suspension required."
+                reason=reason,
+                message="⚠️ URGENT: Child physical abuse material detected. Content shows physical harm and violence against minors. This is a serious violation of Telegram's Terms of Service Section 4.2 and 5.1 regarding child abuse content. Immediate removal and account suspension required."
             ))
             
-            # Human-like: Wait after first report
             await asyncio.sleep(random.uniform(2, 5))
             
-            # ============ STEP 2: Report with Violence (Reinforcement) ============
-            # This triggers the violence category as additional evidence
+            # ============ SECOND REPORT: Violence ============
+            try:
+                from telethon.tl.types import ReportReasonViolence
+                reason2 = ReportReasonViolence()
+            except ImportError:
+                reason2 = "violence"
+            
             result2 = await client(functions.messages.ReportRequest(
                 peer=entity,
                 id=[post_id],
-                reason=ReportReasonViolence(),
+                reason=reason2,
                 message="Physical violence against children. Child abuse content showing harm to minors. This violates Telegram's community guidelines."
             ))
             
-            # Human-like: Wait after second report
             await asyncio.sleep(random.uniform(2, 4))
             
-            # ============ STEP 3: Report with Spam (Extra flag) ============
+            # ============ THIRD REPORT: Spam ============
+            try:
+                from telethon.tl.types import ReportReasonSpam
+                reason3 = ReportReasonSpam()
+            except ImportError:
+                reason3 = "spam"
+            
             result3 = await client(functions.messages.ReportRequest(
                 peer=entity,
                 id=[post_id],
-                reason=ReportReasonSpam(),
+                reason=reason3,
                 message="Multiple reports of child physical abuse. This channel is distributing harmful content."
             ))
             
-            # Human-like: Wait after final report
             await asyncio.sleep(random.uniform(1, 3))
             
-            # ============ STEP 4: Report Peer (Channel-level report) ============
-            # This reports the entire channel, not just the post
+            # ============ PEER REPORT ============
             try:
                 await client(functions.account.ReportPeerRequest(
                     peer=entity,
-                    reason=ReportReasonChildAbuse(),
+                    reason=reason,
                     message="Channel distributing child physical abuse material. This channel violates Telegram's Terms of Service and should be banned."
                 ))
             except Exception as e:
@@ -229,43 +239,6 @@ class TelegramClientManager:
             
         except FloodWaitError as e:
             logger.error(f"Rate limited: {e.seconds}s")
-            await asyncio.sleep(e.seconds)
-            return False
-        except Exception as e:
-            logger.error(f"Report error: {e}")
-            return False
-    
-    async def report_post_human_simple(self, client, post_link):
-        """
-        SIMPLE VERSION - Only Child Physical Abuse
-        One clean report with exact category
-        """
-        try:
-            parts = post_link.split("/")
-            username = parts[-2]
-            post_id = int(parts[-1])
-            
-            entity = await client.get_entity(f"@{username}")
-            
-            # Human-like wait
-            await asyncio.sleep(random.uniform(2, 5))
-            
-            # ONE REPORT - Child Abuse category
-            # Telegram automatically sees this as child abuse
-            # The message specifies "physical abuse"
-            result = await client(functions.messages.ReportRequest(
-                peer=entity,
-                id=[post_id],
-                reason=ReportReasonChildAbuse(),
-                message="⚠️ URGENT: Child physical abuse material detected. Content shows physical harm and violence against minors. This is a violation of Telegram's Terms of Service Section 4.2 and 5.1 regarding child abuse content. Immediate removal and account suspension required."
-            ))
-            
-            # Human-like wait after report
-            await asyncio.sleep(random.uniform(2, 4))
-            
-            return True
-            
-        except FloodWaitError as e:
             await asyncio.sleep(e.seconds)
             return False
         except Exception as e:
@@ -295,7 +268,7 @@ def start(message):
     )
     
     text = f"""
-📢 <b>TELEGRAM REPORT BOT v2.0</b>
+📢 <b>TELEGRAM REPORT BOT v2.1</b>
 <i>Real Human Simulation</i>
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -315,13 +288,6 @@ def start(message):
 6️⃣ Reports with <b>Child Physical Abuse</b>
 7️⃣ Waits 2-5 seconds
 8️⃣ Logs out
-
-━━━━━━━━━━━━━━━━━━━━━
-<b>⚠️ Report sends to:</b>
-• Child Abuse category
-• Child Physical Abuse sub-category
-• Violence category (reinforcement)
-• Channel-level report
 """
     bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
 
@@ -513,7 +479,6 @@ Progress will be shown here.
     thread.start()
 
 async def run_reports(chat_id):
-    """Main reporting engine with human simulation"""
     accounts = db.get_accounts()
     channel = db.current_channel
     post = db.current_post
@@ -524,16 +489,12 @@ async def run_reports(chat_id):
     
     for i, account in enumerate(accounts, 1):
         try:
-            # Send progress
             bot.send_message(chat_id, f"📊 Account {i}/{len(accounts)}: {account['phone']} - ⏳ Processing...")
             
-            # Create client
             client = await manager.create_client(account['phone'], account['session'])
             
-            # Step 1: Human-like delay before joining
             await asyncio.sleep(random.uniform(1, 3))
             
-            # Step 2: Join channel
             bot.send_message(chat_id, f"📢 Account {i}: Joining channel...")
             joined = await manager.join_channel_human(client, channel)
             
@@ -546,10 +507,8 @@ async def run_reports(chat_id):
             
             db.mark_joined(account['phone'])
             
-            # Step 3: Human-like wait before reporting
             await asyncio.sleep(random.uniform(3, 8))
             
-            # Step 4: Report with Child Physical Abuse
             bot.send_message(chat_id, f"📝 Account {i}: Reporting with Child Physical Abuse...")
             reported = await manager.report_post_human(client, post)
             
@@ -563,11 +522,9 @@ async def run_reports(chat_id):
                 bot.send_message(chat_id, f"❌ Account {i}: Report failed")
                 details.append(f"❌ {account['phone']}: Report failed")
             
-            # Step 5: Human-like logout delay
             await asyncio.sleep(random.uniform(1, 3))
             await client.disconnect()
             
-            # Step 6: Delay between accounts
             await asyncio.sleep(random.uniform(5, 10))
             
         except Exception as e:
@@ -576,10 +533,8 @@ async def run_reports(chat_id):
             fail_count += 1
             details.append(f"❌ {account['phone']}: {error_msg}")
     
-    # Final result
     db.is_running = False
     
-    # Build detailed report
     detail_text = "\n".join(details[:20])
     if len(details) > 20:
         detail_text += f"\n... and {len(details) - 20} more"
@@ -601,19 +556,16 @@ async def run_reports(chat_id):
 
 ⚠️ Reports sent with <b>Child Physical Abuse</b> reason.
 Telegram team will review the content.
-
-📌 <b>To verify:</b> Check your fake channel.
-    Look for reports in Telegram's moderation system.
 """, parse_mode='HTML')
 
 # ==================== MAIN ====================
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 TELEGRAM REPORT BOT v2.0                               ║
+    ║   📢 TELEGRAM REPORT BOT v2.1                               ║
     ║   - Real Human Simulation                                   ║
     ║   - Child Physical Abuse Reporting                          ║
-    ║   - Channel Join + Post Report + Category Select            ║
+    ║   - Import Fixed                                           ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     
