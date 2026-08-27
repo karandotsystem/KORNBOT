@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-📢 TELEGRAM REPORT BOT v10.0 - SIMPLEST WORKING
+📢 TELEGRAM REPORT BOT v11.0 - OTP + 2FA WORKING
 """
 
 import os
@@ -10,7 +10,7 @@ import asyncio
 import threading
 import logging
 from telethon import TelegramClient, functions
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, SessionPasswordNeededError
 from telethon.tl.functions.messages import ImportChatInviteRequest, ReportRequest
 from telethon.tl.functions.channels import JoinChannelRequest
 import telebot
@@ -35,6 +35,9 @@ except:
 
 print("✅ Bot Started!")
 
+# ==================== WAITING SESSIONS ====================
+waiting = {}  # chat_id -> {"phone": phone, "step": "otp" or "2fa", "client": client, "waiting": True}
+
 # ==================== DATABASE ====================
 class Database:
     def __init__(self):
@@ -44,7 +47,12 @@ class Database:
         self.is_running = False
     
     def add_account(self, phone):
-        self.accounts.append({"phone": phone, "session": f"session_{len(self.accounts)}_{int(time.time())}"})
+        self.accounts.append({
+            "phone": phone,
+            "session": f"session_{len(self.accounts)}_{int(time.time())}",
+            "joined": False,
+            "reported": False
+        })
         return len(self.accounts)
     
     def get_accounts(self):
@@ -58,6 +66,20 @@ class Database:
         self.current_post = link
         return True
     
+    def mark_joined(self, phone):
+        for acc in self.accounts:
+            if acc["phone"] == phone:
+                acc["joined"] = True
+                return True
+        return False
+    
+    def mark_reported(self, phone):
+        for acc in self.accounts:
+            if acc["phone"] == phone:
+                acc["reported"] = True
+                return True
+        return False
+    
     def reset_all(self):
         self.accounts = []
         self.current_channel = None
@@ -66,7 +88,133 @@ class Database:
 
 db = Database()
 
-# ==================== BOT COMMANDS ====================
+# ==================== TELEGRAM CLIENT MANAGER ====================
+class TelegramClientManager:
+    def __init__(self):
+        self.api_id = API_ID
+        self.api_hash = API_HASH
+    
+    async def join_channel(self, client, channel_link):
+        try:
+            if "+" in channel_link:
+                invite_hash = channel_link.split("+")[-1]
+                await client(functions.messages.ImportChatInviteRequest(invite_hash))
+            else:
+                username = channel_link.split("/")[-1]
+                entity = await client.get_entity(f"@{username}")
+                await client(JoinChannelRequest(entity))
+            return True
+        except:
+            return False
+    
+    async def report_post(self, client, post_link):
+        try:
+            parts = post_link.split("/")
+            username = parts[-2]
+            post_id = int(parts[-1])
+            entity = await client.get_entity(f"@{username}")
+            
+            await client(functions.messages.ReportRequest(
+                peer=entity,
+                id=[post_id],
+                reason="child_abuse",
+                message="Child physical abuse material detected."
+            ))
+            return True
+        except:
+            return False
+
+manager = TelegramClientManager()
+
+# ==================== LOGIN WITH OTP + 2FA ====================
+
+async def login_with_otp_2fa(phone, session_name, chat_id):
+    try:
+        client = TelegramClient(f"sessions/{session_name}", API_ID, API_HASH)
+        await client.connect()
+        
+        if await client.is_user_authorized():
+            bot.send_message(chat_id, f"✅ {phone} already logged in!")
+            return client, True
+        
+        # Send OTP
+        await client.send_code_request(phone)
+        bot.send_message(chat_id, f"📱 OTP sent to {phone}\nSend OTP code:")
+        
+        # Wait for OTP
+        waiting[chat_id] = {"phone": phone, "step": "otp", "client": client, "waiting": True}
+        
+        timeout = 120
+        start = time.time()
+        while waiting.get(chat_id, {}).get("waiting", False):
+            if time.time() - start > timeout:
+                break
+            await asyncio.sleep(1)
+        
+        if chat_id not in waiting:
+            bot.send_message(chat_id, f"❌ Session expired for {phone}")
+            return None, False
+        
+        code = waiting[chat_id].get("code")
+        step = waiting[chat_id].get("step")
+        del waiting[chat_id]
+        
+        if not code:
+            bot.send_message(chat_id, f"⏱ OTP timeout for {phone}")
+            await client.disconnect()
+            return None, False
+        
+        try:
+            await client.sign_in(phone, code=code)
+            bot.send_message(chat_id, f"✅ {phone} logged in!")
+            return client, True
+            
+        except SessionPasswordNeededError:
+            bot.send_message(chat_id, f"🔐 {phone} needs 2FA password.\nSend your 2FA password:")
+            
+            waiting[chat_id] = {"phone": phone, "step": "2fa", "client": client, "waiting": True}
+            
+            timeout = 120
+            start = time.time()
+            while waiting.get(chat_id, {}).get("waiting", False):
+                if time.time() - start > timeout:
+                    break
+                await asyncio.sleep(1)
+            
+            if chat_id not in waiting:
+                bot.send_message(chat_id, f"❌ Session expired for {phone}")
+                return None, False
+            
+            password = waiting[chat_id].get("code")
+            del waiting[chat_id]
+            
+            if not password:
+                bot.send_message(chat_id, f"⏱ 2FA timeout for {phone}")
+                await client.disconnect()
+                return None, False
+            
+            await client.sign_in(password=password)
+            bot.send_message(chat_id, f"✅ {phone} logged in with 2FA!")
+            return client, True
+            
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ {phone}: {str(e)[:30]}")
+        return None, False
+
+# ==================== MESSAGE HANDLER ====================
+
+@bot.message_handler(func=lambda msg: True)
+def handle_all_messages(message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+    
+    if chat_id in waiting and waiting[chat_id].get("waiting", False):
+        waiting[chat_id]["code"] = text
+        waiting[chat_id]["waiting"] = False
+        bot.reply_to(message, "✅ Received!")
+        return
+
+# ==================== COMMANDS ====================
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -86,7 +234,7 @@ def start(message):
     )
     
     text = f"""
-📢 REPORT BOT v10.0
+📢 REPORT BOT v11.0 - OTP + 2FA
 
 Accounts: {len(db.get_accounts())}
 Channel: {db.current_channel or 'Not Set'}
@@ -99,7 +247,6 @@ Status: {'✅ Running' if db.is_running else '⏸ Idle'}
 4. Start Report
 """
     bot.reply_to(message, text, reply_markup=markup)
-    print(f"✅ /start response sent to {user_id}")
 
 # ==================== CALLBACKS ====================
 
@@ -217,8 +364,7 @@ Accounts: {len(accounts)}
 Channel: {db.current_channel}
 Post: {db.current_post}
 
-⚠️ Report feature requires Telethon.
-Check logs for status.
+⚠️ OTP/2FA will be requested per account.
 """)
     
     db.is_running = True
@@ -226,6 +372,9 @@ Check logs for status.
 
 async def run_reports(chat_id):
     accounts = db.get_accounts()
+    channel = db.current_channel
+    post = db.current_post
+    
     success = 0
     failed = 0
     
@@ -233,44 +382,34 @@ async def run_reports(chat_id):
         try:
             bot.send_message(chat_id, f"📊 {i}/{len(accounts)}: {acc['phone']}")
             
-            client = TelegramClient(f"sessions/{acc['session']}", API_ID, API_HASH)
-            await client.connect()
+            client, logged_in = await login_with_otp_2fa(acc['phone'], acc['session'], chat_id)
             
-            if not await client.is_user_authorized():
-                bot.send_message(chat_id, f"❌ {acc['phone']}: Not authorized. Needs OTP.")
+            if not logged_in or not client:
                 failed += 1
                 continue
             
-            # Join channel
-            channel = db.current_channel
-            if "+" in channel:
-                invite_hash = channel.split("+")[-1]
-                await client(functions.messages.ImportChatInviteRequest(invite_hash))
+            joined = await manager.join_channel(client, channel)
+            if not joined:
+                bot.send_message(chat_id, f"❌ Join failed")
+                failed += 1
+                await client.disconnect()
+                continue
+            
+            db.mark_joined(acc['phone'])
+            
+            reported = await manager.report_post(client, post)
+            if reported:
+                success += 1
+                db.mark_reported(acc['phone'])
+                bot.send_message(chat_id, f"✅ Report sent!")
             else:
-                username = channel.split("/")[-1]
-                entity = await client.get_entity(f"@{username}")
-                await client(JoinChannelRequest(entity))
+                failed += 1
+                bot.send_message(chat_id, f"❌ Report failed")
             
-            # Report
-            post = db.current_post
-            parts = post.split("/")
-            username = parts[-2]
-            post_id = int(parts[-1])
-            entity = await client.get_entity(f"@{username}")
-            
-            await client(functions.messages.ReportRequest(
-                peer=entity,
-                id=[post_id],
-                reason="child_abuse",
-                message="Child physical abuse material detected."
-            ))
-            
-            success += 1
-            bot.send_message(chat_id, f"✅ {acc['phone']}: Report sent!")
             await client.disconnect()
             
         except Exception as e:
-            bot.send_message(chat_id, f"❌ {acc['phone']}: {str(e)[:30]}")
+            bot.send_message(chat_id, f"❌ Error: {str(e)[:30]}")
             failed += 1
     
     db.is_running = False
@@ -286,7 +425,7 @@ Total: {len(accounts)}
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   📢 REPORT BOT v10.0 - SIMPLEST WORKING                   ║
+    ║   📢 REPORT BOT v11.0 - OTP + 2FA WORKING                  ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print("✅ Owner:", OWNER_ID)
