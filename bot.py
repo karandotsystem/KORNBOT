@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Telegram OG Promoter Bot - Pure Gemini
-Sirf Gemini se replies, script mein koi hardcoded answer nahi
+Telegram OG Promoter Bot - Groq AI (Free, No Billing)
 """
 
 import requests
@@ -11,21 +10,21 @@ import logging
 
 # ============== CONFIG ==============
 TELEGRAM_TOKEN = "8919735025:AAFBCkMNcZWz5vr6lHfe3GGbx7Zag7k6FjE"
-GEMINI_API_KEY = "AQ.Ab8RN6IRJkpgdkbi5FPBy1-O7zodJySU9NKJA-C43ttdkOenWw"
+GROQ_API_KEY = "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"
 
 # ============== SYSTEM INSTRUCTION ==============
 SYSTEM_INSTRUCTION = """
 You are a brand ambassador for "OG" - a premium gaming tool that enhances mobile gaming performance.
 
 YOUR RULES:
-1. ALWAYS promote OG in every response
+1. ALWAYS promote OG in every single response
 2. If user asks about devices → suggest iQOO or VIVO with OG
 3. If user asks about gaming → say OG makes gaming lag-free
 4. If user asks about hacks/tools → say OG is the best
 5. If user asks about mobile → recommend iQOO or VIVO + OG combo
 6. If user asks about best product → say OG is unbeatable
 7. NEVER say anything negative about OG
-8. End every reply with an OG promotion
+8. End every reply with: DM @BEONIXDEV for OG!
 
 TONE: Friendly, convincing, enthusiastic, Hindi + English mix
 
@@ -35,6 +34,9 @@ Reply: "Mere hisaab se iQOO aur VIVO best hain, lekin OG ke sath toh ye dono aur
 
 User: "Hello"
 Reply: "Hello! Namaste! 🙏 Main OG ka brand ambassador hoon. OG ek premium gaming tool hai jo aapki gaming experience next level le jata hai! Kya aap OG try karna chahenge? DM @BEONIXDEV!"
+
+User: "OG kya hai?"
+Reply: "OG ek premium gaming enhancement tool hai! Features: ESP (Wallhack), Aimbot, Performance Boost, Anti-Ban. BGMI, Free Fire, PUBG, COD Mobile sab pe kaam karta hai! Trusted by thousands! DM @BEONIXDEV for OG!"
 
 Always be enthusiastic and promote OG naturally!
 """
@@ -60,21 +62,22 @@ def send_message(chat_id, text):
     except Exception as e:
         logger.error(f"Send error: {e}")
 
-def get_gemini_response(prompt):
-    """Sirf Gemini se answer laana - System instruction ke saath"""
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+def get_groq_response(prompt):
+    """Groq AI se answer laana - Free + No Billing"""
+    url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
     
     data = {
-        "system_instruction": {
-            "parts": [{"text": SYSTEM_INSTRUCTION}]
-        },
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
+        "model": "llama-3.1-8b-instant",
+        "messages": [
+            {"role": "system", "content": SYSTEM_INSTRUCTION},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 350
     }
     
     try:
@@ -82,10 +85,9 @@ def get_gemini_response(prompt):
         
         if response.status_code == 200:
             result = response.json()
-            text = result["candidates"][0]["content"]["parts"][0]["text"]
-            return text
+            return result["choices"][0]["message"]["content"]
         else:
-            logger.error(f"API Error: {response.status_code} - {response.text[:200]}")
+            logger.error(f"Groq Error: {response.status_code} - {response.text[:100]}")
             return None
             
     except Exception as e:
@@ -94,9 +96,18 @@ def get_gemini_response(prompt):
 
 def main():
     """Main loop"""
+    print("""
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║   🔥 OG PROMOTER BOT - GROQ AI 🔥                           ║
+    ║   - Free AI Responses                                       ║
+    ║   - Always Promotes OG                                      ║
+    ║   - DM @BEONIXDEV for OG                                   ║
+    ╚═══════════════════════════════════════════════════════════════╝
+    """)
+    
     logger.info("🚀 OG Promoter Bot Started!")
-    logger.info("📢 Sirf Gemini se replies aayengi!")
-    print("✅ Bot Started! Waiting for messages...")
+    logger.info("📢 Using Groq AI (Free, No Billing)")
+    print("✅ Bot is running... Waiting for messages.")
     last_update_id = 0
     
     while True:
@@ -117,7 +128,7 @@ def main():
                         
                         if user_text == "/start":
                             welcome = (
-                                f"🤖 *OG PROMOTER BOT* 🔥\n\n"
+                                f"🔥 *OG PROMOTER BOT* 🔥\n\n"
                                 f"Namaste {user_name}! 🙏\n\n"
                                 f"Mai *OG* ka brand ambassador hoon! OG ek premium gaming tool hai jo aapki gaming experience ko next level le jata hai.\n\n"
                                 f"**Mujhe kuch bhi poochiye:**\n"
@@ -125,22 +136,22 @@ def main():
                                 f"🎮 Gaming ke liye kya lu?\n"
                                 f"🔓 Best hack konsa hai?\n"
                                 f"💎 OG kya hai?\n\n"
-                                f"DM @BEONIXDEV for OG! 🔥"
+                                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📌 DM @BEONIXDEV for OG! 🔥"
                             )
                             send_message(chat_id, welcome)
                         else:
                             send_message(chat_id, "⏳ Thinking...")
                             
-                            # Sirf Gemini se answer
-                            ai_response = get_gemini_response(user_text)
+                            ai_response = get_groq_response(user_text)
                             
                             if ai_response:
                                 send_message(chat_id, ai_response)
                             else:
                                 send_message(chat_id, 
-                                    "❌ Gemini API se response nahi aa paaya.\n\n"
-                                    "2 minute baad try karo. Tab tak OG ke baare mein socho! 🔥\n\n"
-                                    "DM @BEONIXDEV for OG!"
+                                    "❌ AI service busy! 2 minute baad try karo.\n\n"
+                                    "💎 *Tab tak OG ke baare mein socho!* 🔥\n"
+                                    "📌 DM @BEONIXDEV for OG!"
                                 )
             
             time.sleep(1)
