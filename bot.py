@@ -11,7 +11,7 @@ import logging
 
 # ============== CONFIG ==============
 TELEGRAM_TOKEN = "8919735025:AAFBCkMNcZWz5vr6lHfe3GGbx7Zag7k6FjE"
-GEMINI_API_KEY = "AQ.Ab8RN6JPGFWSkPpuLmAZE9jZGPQqkkratKJ8Etvvx8-T3d0dJw"
+GEMINI_API_KEY = "AQ.Ab8RN6IHaUTw5frI6FteWI23nJ1RRK7uanS0jOL-jI9ENefW3Q"
 
 # ============== SYSTEM INSTRUCTION ==============
 SYSTEM_INSTRUCTION = """
