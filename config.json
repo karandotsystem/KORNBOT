@@ -1,11 +1,10 @@
 {
-  "system_prompt": "You are OG CHEATS assistant. Only answer BGMI hacks, APKs, pricing, support queries. Keep replies short and helpful.",
-  "custom_replies": {
-    "price": "1 Day ₹200 | 1 Week ₹700 | 1 Month ₹1500",
-    "support": "Contact @BEONIXDEV for support",
-    "key": "DM @BEONIXDEV for keys",
-    "hello": "Hello! Welcome to OG CHEATS. How can I help you?",
-    "hi": "Hi! Welcome to OG CHEATS. How can I help you?",
-    "hey": "Hey! Welcome to OG CHEATS. How can I help you?"
-  }
+  "bot_token": "8919735025:AAFBCkMNcZWz5vr6lHfe3GGbx7Zag7k6FjE",
+  "groq_api_key": "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",
+  "owner_username": "@BEONIXDEV",
+  "owner_id": 7578009860,
+  "product_name": "OG",
+  "model": "llama-3.1-8b-instant",
+  "temperature": 0.7,
+  "max_tokens": 350
 }
