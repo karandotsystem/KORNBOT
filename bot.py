@@ -35,7 +35,6 @@ urllib3.disable_warnings()
 BOT_TOKEN = "8415742587:AAFtsM3XYynwaWUhX_EgV4Wx2phx11uUK6U"
 OWNER_ID = 8935807032
 OWNER_USERNAME = "@VATEROFWHOLETG"
-BOT_NAME = "THE KING OF INFORMATION"
 
 # ==================== VEHICLE API CONSTANTS ====================
 P, C, S = '!~)#@*&^', 'b91c303443f61b37106750823881cd2f', 'de83eeeb148878ae375f28756492e8a0'
@@ -97,6 +96,15 @@ def save_welcome(d):
 def get_ist_now():
     return datetime.now(IST)
 
+def _is_active_exp(exp):
+    try:
+        exp_dt = datetime.fromisoformat(exp)
+        if exp_dt.tzinfo is None:
+            exp_dt = IST.localize(exp_dt)
+        return get_ist_now() < exp_dt
+    except:
+        return False
+
 # ==================== USER MANAGEMENT ====================
 def get_user(user_id):
     users = get_users()
@@ -127,13 +135,7 @@ def is_user_active(user_id):
     expiry = user.get("expiry")
     if not expiry:
         return False
-    try:
-        exp_dt = datetime.fromisoformat(expiry)
-        if exp_dt.tzinfo is None:
-            exp_dt = IST.localize(exp_dt)
-        return get_ist_now() < exp_dt
-    except:
-        return False
+    return _is_active_exp(expiry)
 
 def get_remaining_time(user_id):
     user = get_user(user_id)
@@ -176,14 +178,13 @@ def redeem_token(user_id, token):
     tokens = get_tokens()
     if token not in tokens:
         return {"success": False, "message": "❌ Invalid token."}
-    
+
     tdata = tokens[token]
     if tdata.get("is_used"):
         return {"success": False, "message": "❌ Token already used."}
-    
+
     days = tdata["days"]
-    
-    # Check if user already has active
+
     if is_user_active(user_id):
         current_exp = get_user(user_id).get("expiry")
         base = datetime.fromisoformat(current_exp)
@@ -191,22 +192,20 @@ def redeem_token(user_id, token):
             base = IST.localize(base)
     else:
         base = get_ist_now()
-    
+
     new_expiry = base + timedelta(days=days)
-    
-    # Mark token used
+
     tdata["is_used"] = True
     tdata["used_by"] = user_id
     tdata["used_at"] = get_ist_now().isoformat()
     tokens[token] = tdata
     save_tokens(tokens)
-    
-    # Update user
+
     update_user(user_id, {
         "expiry": new_expiry.isoformat(),
         "token_used": token
     })
-    
+
     return {
         "success": True,
         "message": f"✅ Token redeemed!\n\n⏱ Duration: {days} days\n📅 Expires: {new_expiry.strftime('%d %b %Y, %I:%M %p')} IST\n\n🔥 Unlimited access activated!"
@@ -468,8 +467,6 @@ except:
 
 print("✅ Bot Started!")
 
-user_states = {}
-
 # ==================== BOT COMMANDS ====================
 
 @bot.message_handler(commands=['start'])
@@ -477,19 +474,19 @@ def start(message):
     user_id = message.from_user.id
     username = message.from_user.username or "User"
     first_name = message.from_user.first_name or "User"
-    
-    user = get_user(user_id)
+
+    get_user(user_id)
     update_user(user_id, {"username": username, "first_name": first_name})
-    
+
     if user_id == OWNER_ID:
         show_owner_menu(message)
         return
-    
+
     if not is_user_active(user_id):
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(types.InlineKeyboardButton("🔑 Redeem Token", callback_data="user_redeem"))
         markup.add(types.InlineKeyboardButton("👑 Contact Owner", url=f"https://t.me/{OWNER_USERNAME.replace('@', '')}"))
-        
+
         text = f"""👑 <b>THE KING OF INFORMATION</b> 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -501,21 +498,21 @@ Token redeem karo ya owner se contact karo.
 <b>📌 Owner:</b> {OWNER_USERNAME}
 ━━━━━━━━━━━━━━━━━━━━━
 """
-        send_with_welcome(message.chat.id, text, markup)
+        bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
         return
-    
+
     show_user_menu(message)
 
 def show_user_menu(message):
     user_id = message.from_user.id
-    remaining = get_remaining_time(user_id)
+    remaining = get_remaining_time(user_id) or "Expired"
     total = get_user(user_id).get("total_searches", 0)
-    
+
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("🔍 Search Vehicle", callback_data="search_vehicle"))
     markup.add(types.InlineKeyboardButton("📊 My Stats", callback_data="my_stats"))
     markup.add(types.InlineKeyboardButton("👑 Contact Owner", url=f"https://t.me/{OWNER_USERNAME.replace('@', '')}"))
-    
+
     text = f"""👑 <b>THE KING OF INFORMATION</b> 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -536,7 +533,7 @@ def show_owner_menu(message):
     users = get_users()
     tokens = get_tokens()
     active = sum(1 for u in users.values() if u.get('expiry') and _is_active_exp(u.get('expiry')))
-    
+
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton("🎫 Generate Token", callback_data="owner_gen"),
@@ -548,9 +545,9 @@ def show_owner_menu(message):
     )
     markup.add(
         types.InlineKeyboardButton("📸 Set Welcome Photo", callback_data="owner_photo"),
-        types.InlineKeyboardButton("📝 Set Welcome Caption", callback_data="owner_caption")
+        types.InlineKeyboardButton("📝 Set Caption", callback_data="owner_caption")
     )
-    
+
     text = f"""👑 <b>OWNER PANEL</b> 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
@@ -564,28 +561,9 @@ def show_owner_menu(message):
 /users - List all users
 /tokens - List all tokens
 /stats - Statistics
+/setcaption [text] - Set welcome caption
 """
     bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
-
-def _is_active_exp(exp):
-    try:
-        exp_dt = datetime.fromisoformat(exp)
-        if exp_dt.tzinfo is None:
-            exp_dt = IST.localize(exp_dt)
-        return get_ist_now() < exp_dt
-    except:
-        return False
-
-def send_with_welcome(chat_id, text, markup=None):
-    welcome = get_welcome()
-    photo = welcome.get("photo")
-    if photo:
-        try:
-            bot.send_photo(chat_id, photo, caption=text, reply_markup=markup, parse_mode='HTML')
-            return
-        except:
-            pass
-    bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
 
 # ==================== OWNER COMMANDS ====================
 
@@ -594,23 +572,24 @@ def generate_token_cmd(message):
     if message.from_user.id != OWNER_ID:
         bot.reply_to(message, "❌ Owner only.")
         return
-    
+
     parts = message.text.split()
     if len(parts) < 2:
         bot.reply_to(message, "❌ Usage: /generate [days]\nExample: /generate 1")
         return
-    
+
+    raw = parts[1].lower().rstrip('d')
     try:
-        days = int(parts[1])
+        days = int(raw)
         if days < 1 or days > 365:
             bot.reply_to(message, "❌ Days must be 1-365.")
             return
     except:
         bot.reply_to(message, "❌ Invalid number.")
         return
-    
+
     token = generate_token(days)
-    
+
     text = f"""✅ <b>TOKEN GENERATED</b>
 
 🎫 Token: <code>{token}</code>
@@ -626,12 +605,12 @@ def generate_token_cmd(message):
 def list_users(message):
     if message.from_user.id != OWNER_ID:
         return
-    
+
     users = get_users()
     if not users:
         bot.reply_to(message, "📭 No users.")
         return
-    
+
     text = "👥 <b>ALL USERS</b>\n\n"
     for uid, u in list(users.items())[-20:]:
         name = u.get('first_name') or u.get('username') or "Unknown"
@@ -640,22 +619,22 @@ def list_users(message):
         searches = u.get('total_searches', 0)
         text += f"{status} <code>{uid}</code> - {name}\n"
         text += f"   📊 Searches: {searches}\n"
-    
+
     if len(users) > 20:
         text += f"\n... and {len(users) - 20} more"
-    
+
     bot.reply_to(message, text, parse_mode='HTML')
 
 @bot.message_handler(commands=['tokens'])
 def list_tokens(message):
     if message.from_user.id != OWNER_ID:
         return
-    
+
     tokens = get_tokens()
     if not tokens:
         bot.reply_to(message, "📭 No tokens.")
         return
-    
+
     text = "🎫 <b>ALL TOKENS</b>\n\n"
     for token, t in list(tokens.items())[-20:]:
         status = "✅ Used" if t.get('is_used') else "🟢 Available"
@@ -664,19 +643,19 @@ def list_tokens(message):
         if t.get('used_by'):
             text += f" | 👤 {t['used_by']}"
         text += "\n"
-    
+
     bot.reply_to(message, text, parse_mode='HTML')
 
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
     if message.from_user.id != OWNER_ID:
         return
-    
+
     users = get_users()
     tokens = get_tokens()
     total_searches = sum(u.get('total_searches', 0) for u in users.values())
     active = sum(1 for u in users.values() if u.get('expiry') and _is_active_exp(u.get('expiry')))
-    
+
     text = f"""📊 <b>STATISTICS</b>
 
 👥 Total Users: <b>{len(users)}</b>
@@ -694,11 +673,28 @@ def redeem_cmd(message):
     if len(parts) < 2:
         bot.reply_to(message, "❌ Usage: /redeem [token]")
         return
-    
+
     token = parts[1].strip().upper()
     user_id = message.from_user.id
+    get_user(user_id)
     result = redeem_token(user_id, token)
     bot.reply_to(message, result['message'])
+
+    if result['success']:
+        show_user_menu(message)
+
+@bot.message_handler(commands=['setcaption'])
+def set_caption(message):
+    if message.from_user.id != OWNER_ID:
+        return
+    caption = message.text.replace("/setcaption", "", 1).strip()
+    if not caption:
+        bot.reply_to(message, "❌ Usage: /setcaption your text")
+        return
+    welcome = get_welcome()
+    welcome["caption"] = caption
+    save_welcome(welcome)
+    bot.reply_to(message, "✅ Caption updated!")
 
 # ==================== CALLBACKS ====================
 
@@ -706,12 +702,12 @@ def redeem_cmd(message):
 def handle_callback(call):
     user_id = call.from_user.id
     data = call.data
-    
+
     if data == "user_redeem":
         bot.answer_callback_query(call.id)
         msg = bot.send_message(call.message.chat.id, "🔑 Enter token:\nExample: KING-XXXXXXXXXXXX")
         bot.register_next_step_handler(msg, process_redeem)
-    
+
     elif data == "search_vehicle":
         bot.answer_callback_query(call.id)
         if not is_user_active(user_id):
@@ -719,7 +715,7 @@ def handle_callback(call):
             return
         msg = bot.send_message(call.message.chat.id, "🔍 Send vehicle number:\nExample: HR26AB1234")
         bot.register_next_step_handler(msg, process_search)
-    
+
     elif data == "my_stats":
         bot.answer_callback_query(call.id)
         user = get_user(user_id)
@@ -733,27 +729,27 @@ def handle_callback(call):
 📅 Joined: {user.get('joined_at', '')[:10]}
 """
         bot.send_message(call.message.chat.id, text, parse_mode='HTML')
-    
+
     elif data == "owner_gen":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "🎫 Usage: /generate [days]\nExample: /generate 1")
-    
+
     elif data == "owner_tokens":
         bot.answer_callback_query(call.id)
         list_tokens(call.message)
-    
+
     elif data == "owner_users":
         bot.answer_callback_query(call.id)
         list_users(call.message)
-    
+
     elif data == "owner_stats":
         bot.answer_callback_query(call.id)
         show_stats(call.message)
-    
+
     elif data == "owner_photo":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📸 Send a photo to set as welcome image.")
-    
+
     elif data == "owner_caption":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📝 Usage: /setcaption [your caption]")
@@ -763,6 +759,7 @@ def handle_callback(call):
 def process_redeem(message):
     token = message.text.strip().upper()
     user_id = message.from_user.id
+    get_user(user_id)
     result = redeem_token(user_id, token)
     bot.reply_to(message, result['message'])
     if result['success']:
@@ -773,21 +770,20 @@ def process_search(message):
     if not is_user_active(user_id):
         bot.reply_to(message, "❌ No active access.")
         return
-    
+
     vehicle = N(message.text.strip())
     if not RX.match(vehicle):
         bot.reply_to(message, "❌ Invalid vehicle number format.")
         return
-    
-    # Check cache
+
     cache = get_cache()
     cached = cache.get("results", {}).get(vehicle)
     if cached:
         bot.reply_to(message, f"📱 <b>Mobile:</b> <code>{cached}</code>", parse_mode='HTML')
         return
-    
+
     msg = bot.reply_to(message, f"🔍 Searching {vehicle}...")
-    
+
     try:
         with ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(F, vehicle, 1)
@@ -795,19 +791,17 @@ def process_search(message):
     except TimeoutError:
         bot.edit_message_text(f"⏱ Timeout for {vehicle}", message.chat.id, msg.message_id)
         return
-    
+
     mobile = mob(result) if result else None
-    
+
     if mobile:
-        # Save to cache
         cache = get_cache()
         cache.setdefault("results", {})[vehicle] = mobile
         save_cache(cache)
-        
-        # Update stats
+
         user = get_user(user_id)
         update_user(user_id, {"total_searches": user.get("total_searches", 0) + 1})
-        
+
         text = f"""✅ <b>FOUND!</b>
 
 🚗 Vehicle: <code>{vehicle}</code>
@@ -820,18 +814,7 @@ def process_search(message):
     else:
         bot.edit_message_text(f"❌ Mobile number not found for {vehicle}", message.chat.id, msg.message_id)
 
-@bot.message_handler(commands=['setcaption'])
-def set_caption(message):
-    if message.from_user.id != OWNER_ID:
-        return
-    caption = message.text.replace("/setcaption", "", 1).strip()
-    if not caption:
-        bot.reply_to(message, "❌ Usage: /setcaption your text")
-        return
-    welcome = get_welcome()
-    welcome["caption"] = caption
-    save_welcome(welcome)
-    bot.reply_to(message, f"✅ Caption updated!")
+# ==================== PHOTO HANDLER ====================
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -848,24 +831,20 @@ def main():
     print("""
     ╔═══════════════════════════════════════════════════════════════╗
     ║   👑 THE KING OF INFORMATION                                ║
-    ║   - Vehicle Number to Mobile                                ║
-    ║   - Credit System                                           ║
-    ║   - Token Generation                                        ║
     ╚═══════════════════════════════════════════════════════════════╝
     """)
     print(f"✅ Owner: {OWNER_ID}")
     print(f"✅ Bot starting...")
-    
-    # Initialize token
+
     print("⏳ Fetching API token...")
     if TK():
         print("✅ API Token ready!")
     else:
         print("⚠️ API Token failed - will retry on demand")
-    
+
     while True:
         try:
-            bot.polling(none_stop=True, interval=0, timeout=20)
+            bot.infinity_polling(timeout=10, long_polling_timeout=10)
         except Exception as e:
             print(f"❌ Error: {e}")
             time.sleep(5)
