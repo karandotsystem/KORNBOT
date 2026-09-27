@@ -30,6 +30,10 @@ BOT_TOKEN = "8415742587:AAFtsM3XYynwaWUhX_EgV4Wx2phx11uUK6U"
 OWNER_ID = 8935807032
 OWNER_USERNAME = "@VATEROFWHOLETG"
 
+# API Credentials
+API_ID = 31486711
+API_HASH = "1b9f690d42fa6a15e37043ae1b6f03e6"
+
 # ==================== VEHICLE API CONSTANTS ====================
 P, C, S = '!~)#@*&^', 'b91c303443f61b37106750823881cd2f', 'de83eeeb148878ae375f28756492e8a0'
 G = 'https://delhigw.napix.gov.in/nic/parivahan'
@@ -502,19 +506,23 @@ Token redeem karo ya owner se contact karo.
         show_user_menu(message)
     except Exception as e:
         print(f"❌ Start error: {e}")
-        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+        try:
+            bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+        except:
+            pass
 
 def show_user_menu(message):
-    user_id = message.from_user.id
-    remaining = get_remaining_time(user_id) or "Expired"
-    total = get_user(user_id).get("total_searches", 0)
+    try:
+        user_id = message.from_user.id
+        remaining = get_remaining_time(user_id) or "Expired"
+        total = get_user(user_id).get("total_searches", 0)
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("🔍 Search Vehicle", callback_data="search_vehicle"))
-    markup.add(types.InlineKeyboardButton("📊 My Stats", callback_data="my_stats"))
-    markup.add(types.InlineKeyboardButton("👑 Contact Owner", url=f"https://t.me/{OWNER_USERNAME.replace('@', '')}"))
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(types.InlineKeyboardButton("🔍 Search Vehicle", callback_data="search_vehicle"))
+        markup.add(types.InlineKeyboardButton("📊 My Stats", callback_data="my_stats"))
+        markup.add(types.InlineKeyboardButton("👑 Contact Owner", url=f"https://t.me/{OWNER_USERNAME.replace('@', '')}"))
 
-    text = f"""👑 <b>THE KING OF INFORMATION</b> 👑
+        text = f"""👑 <b>THE KING OF INFORMATION</b> 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
 ✅ <b>Access Active</b>
@@ -527,29 +535,31 @@ Send vehicle number to get owner's mobile number.
 
 Example: <code>HR26AB1234</code>
 """
-    bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
+        bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
+    except Exception as e:
+        print(f"❌ User menu error: {e}")
 
 def show_owner_menu(message):
-    user_id = message.from_user.id
-    users = get_users()
-    tokens = get_tokens()
-    active = sum(1 for u in users.values() if u.get('expiry') and _is_active_exp(u.get('expiry')))
+    try:
+        users = get_users()
+        tokens = get_tokens()
+        active = sum(1 for u in users.values() if u.get('expiry') and _is_active_exp(u.get('expiry')))
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🎫 Generate Token", callback_data="owner_gen"),
-        types.InlineKeyboardButton("📋 All Tokens", callback_data="owner_tokens")
-    )
-    markup.add(
-        types.InlineKeyboardButton("👥 All Users", callback_data="owner_users"),
-        types.InlineKeyboardButton("📊 Statistics", callback_data="owner_stats")
-    )
-    markup.add(
-        types.InlineKeyboardButton("📸 Set Welcome Photo", callback_data="owner_photo"),
-        types.InlineKeyboardButton("📝 Set Caption", callback_data="owner_caption")
-    )
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🎫 Generate Token", callback_data="owner_gen"),
+            types.InlineKeyboardButton("📋 All Tokens", callback_data="owner_tokens")
+        )
+        markup.add(
+            types.InlineKeyboardButton("👥 All Users", callback_data="owner_users"),
+            types.InlineKeyboardButton("📊 Statistics", callback_data="owner_stats")
+        )
+        markup.add(
+            types.InlineKeyboardButton("📸 Set Welcome Photo", callback_data="owner_photo"),
+            types.InlineKeyboardButton("📝 Set Caption", callback_data="owner_caption")
+        )
 
-    text = f"""👑 <b>OWNER PANEL</b> 👑
+        text = f"""👑 <b>OWNER PANEL</b> 👑
 
 ━━━━━━━━━━━━━━━━━━━━━
 👥 Total Users: <b>{len(users)}</b>
@@ -564,7 +574,9 @@ def show_owner_menu(message):
 /stats - Statistics
 /setcaption [text] - Set welcome caption
 """
-    bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
+        bot.reply_to(message, text, reply_markup=markup, parse_mode='HTML')
+    except Exception as e:
+        print(f"❌ Owner menu error: {e}")
 
 # ==================== OWNER COMMANDS ====================
 
