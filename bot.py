@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-👑 THE KING OF INFORMATION - RAILWAY READY (NO CRYPTO)
+👑 THE KING OF INFORMATION - RAILWAY READY
 Vehicle Number to Mobile + Telegram Bot
 """
 
@@ -16,7 +16,6 @@ import re
 import time
 import base64
 import threading
-import os
 import urllib3
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
@@ -305,19 +304,7 @@ def mob(d):
         if m not in (None, ''):
             return m
 
-# ==================== BOT ====================
-print("✅ Imports OK")
-
-bot = telebot.TeleBot(BOT_TOKEN)
-try:
-    bot.remove_webhook()
-    print("✅ Webhook removed")
-except Exception as e:
-    print(f"⚠️ Webhook: {e}")
-
-print("✅ Bot initialized")
-
-# ==================== FLASK ====================
+# ==================== FLASK API ====================
 _stats = {'total': 0, 'found': 0, 'not_found': 0}
 flask_app = Flask(__name__)
 
@@ -349,7 +336,18 @@ def root_route():
 def run_flask():
     flask_app.run(host='0.0.0.0', port=6958, debug=False, use_reloader=False)
 
-# ==================== BOT HANDLERS ====================
+# ==================== TELEGRAM BOT ====================
+print("✅ Imports OK")
+
+bot = telebot.TeleBot(BOT_TOKEN)
+try:
+    bot.remove_webhook()
+    print("✅ Webhook removed")
+except Exception as e:
+    print(f"⚠️ Webhook: {e}")
+
+print("✅ Bot initialized")
+
 @bot.message_handler(commands=['start'])
 def start(message):
     try:
@@ -364,6 +362,7 @@ def start(message):
 <b>Commands:</b>
 /start - This menu
 /ping - Check bot
+/search HR26AB1234 - Search vehicle
 """, parse_mode='HTML')
         else:
             bot.reply_to(message, f"""👑 <b>THE KING OF INFORMATION</b>
@@ -372,7 +371,8 @@ Namaste! Welcome.
 
 📌 <b>Owner:</b> {OWNER_USERNAME}
 
-Bot is working! 🚀""", parse_mode='HTML')
+Bot is working! 🚀
+""", parse_mode='HTML')
     except Exception as e:
         print(f"❌ Start error: {e}")
 
@@ -383,12 +383,50 @@ def ping(message):
     except Exception as e:
         print(f"❌ Ping error: {e}")
 
+@bot.message_handler(commands=['search'])
+def search_cmd(message):
+    try:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            bot.reply_to(message, "❌ Usage: /search HR26AB1234")
+            return
+        vehicle = N(parts[1].strip())
+        if not RX.match(vehicle):
+            bot.reply_to(message, "❌ Invalid vehicle number format.")
+            return
+        msg = bot.reply_to(message, f"🔍 Searching {vehicle}...")
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(F, vehicle, 1)
+            result = future.result(timeout=25)
+        mobile = mob(result) if result else None
+        if mobile:
+            bot.edit_message_text(f"✅ <b>FOUND!</b>\n\n🚗 Vehicle: <code>{vehicle}</code>\n📱 Mobile: <code>{mobile}</code>",
+                                  message.chat.id, msg.message_id, parse_mode='HTML')
+        else:
+            bot.edit_message_text(f"❌ Mobile number not found for {vehicle}",
+                                  message.chat.id, msg.message_id)
+    except TimeoutError:
+        bot.reply_to(message, "⏱ Timeout. Try again.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error: {str(e)[:100]}")
+
 @bot.message_handler(func=lambda m: True)
 def echo(message):
     try:
         bot.reply_to(message, f"📩 Received: {message.text}\n\n👑 THE KING OF INFORMATION")
     except Exception as e:
         print(f"❌ Echo error: {e}")
+
+# ==================== TOKEN FETCH (BACKGROUND) ====================
+def init_token_bg():
+    print("⏳ Fetching API token...")
+    try:
+        if TK():
+            print("✅ API Token ready!")
+        else:
+            print("⚠️ API Token failed - will retry on demand")
+    except Exception as e:
+        print(f"⚠️ Token error: {e}")
 
 # ==================== MAIN ====================
 def main():
@@ -400,17 +438,12 @@ def main():
     print(f"✅ Owner: {OWNER_ID}")
     print(f"✅ Bot Token: {BOT_TOKEN[:20]}...")
 
+    # Flask start in background
     threading.Thread(target=run_flask, daemon=True).start()
     print("✅ Flask API started on port 6958")
 
-    print("⏳ Fetching API token...")
-    try:
-        if TK():
-            print("✅ API Token ready!")
-        else:
-            print("⚠️ API Token failed - will retry on demand")
-    except Exception as e:
-        print(f"⚠️ Token error: {e}")
+    # Token fetch in background (non-blocking)
+    threading.Thread(target=init_token_bg, daemon=True).start()
 
     print("✅ Bot is now polling...")
 
