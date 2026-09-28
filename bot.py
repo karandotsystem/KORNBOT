@@ -20,6 +20,13 @@ from flask import Flask, request, jsonify
 
 urllib3.disable_warnings()
 
+# ============ PROXY CONFIG ============
+# Leave empty ("") for direct connection.
+# For Indian egress, set:
+#   "http://user:pass@ip:port"  or  "socks5://user:pass@ip:port"
+NAPI_PROXY = ""
+# =====================================
+
 P, C, S = '!~)#@*&^', 'b91c303443f61b37106750823881cd2f', 'de83eeeb148878ae375f28756492e8a0'
 G = 'https://delhigw.napix.gov.in/nic/parivahan'
 U = G + '/mparivahan/wrapperapi/vahan/vahancapi/updatemobile/getMobileNo'
@@ -34,18 +41,18 @@ _lk, _tk, _ts, _slk = threading.Lock(), None, 0.0, threading.Lock()
 _gs = _gx = None
 _sem = threading.Semaphore(48)
 
-# ============ TELEGRAM BOT CONFIG ============
 BOT_TOKEN = "8415742587:AAFtsM3XYynwaWUhX_EgV4Wx2phx11uUK6U"
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TG_POLL_TIMEOUT = 30
 TG_REQUEST_TIMEOUT = 25
 TG_MAX_MSG_LEN = 4000
 TG_TOKEN_RETRY_EVERY = 30
-# ===========================================
+
 
 def K(t):
     r = t[::-1]
     return ((r if len(r) <= 3 else r[:4] + r[-4:]) + P).encode()
+
 
 def E(o, t):
     return base64.b64encode(
@@ -55,6 +62,7 @@ def E(o, t):
             )
         )
     ).decode()
+
 
 def X(b, t):
     raw = base64.b64decode(b)
@@ -66,14 +74,17 @@ def X(b, t):
         pass
     return json.loads(unpad(AES.new(K(t), AES.MODE_ECB).decrypt(raw), 16))
 
+
 def N(r):
     return re.sub(r'[\s\-]', '', r.upper())
+
 
 def STT(r):
     if re.match(r'^\d{2}BH', r):
         return 'DL'
     s = r[:2]
     return s if s in ST else 'DL'
+
 
 def OS(x):
     if x is None or x == '':
@@ -82,6 +93,7 @@ def OS(x):
         return str(int(x))
     except Exception:
         return str(x)
+
 
 def PO(r):
     if re.match(r'^\d{2}BH', r):
@@ -99,6 +111,7 @@ def PO(r):
         return d.zfill(2) if len(d) == 1 else d
     return '1'
 
+
 def OF(r, e=None):
     o = []
     def a(x):
@@ -115,6 +128,7 @@ def OF(r, e=None):
         a(x)
     return o
 
+
 def SS():
     global _gs
     if _gs is None:
@@ -123,17 +137,21 @@ def SS():
                 s = requests.Session()
                 s.verify = False
                 s.headers['User-Agent'] = A
+                if NAPI_PROXY:
+                    s.proxies = {'http': NAPI_PROXY, 'https': NAPI_PROXY}
                 ad = requests.adapters.HTTPAdapter(pool_connections=48, pool_maxsize=48, max_retries=0)
                 s.mount('https://', ad)
                 s.mount('http://', ad)
                 _gs = s
     return _gs
 
+
 def GX(n=40):
     global _gx
     if _gx is None:
         _gx = ThreadPoolExecutor(max_workers=n)
     return _gx
+
 
 def TK(f=0):
     global _tk, _ts
@@ -165,6 +183,7 @@ def TK(f=0):
                 time.sleep(.2 * (i + 1))
         return None
 
+
 def P1(u, t, o):
     ts = str(int(time.time() * 1000))
     h = {
@@ -186,6 +205,7 @@ def P1(u, t, o):
             time.sleep(.12 * (i + 1))
     return z, ts
 
+
 def T1(r, o, c, t, s):
     z, ts = P1(U, t, {'regnNo': r, 'stateCode': s, 'chassisNo': str(c), 'officeCode': str(o), 'purCd': '135'})
     if z is None:
@@ -202,6 +222,7 @@ def T1(r, o, c, t, s):
     ok = isinstance(a, dict) and a.get('mobileNo') not in (None, '')
     return (d if ok else None), int(ok), 0
 
+
 def HO(r, t):
     z, ts = P1(HP, t, {'regnNo': r})
     if z is None or z.status_code != 200:
@@ -216,6 +237,7 @@ def HO(r, t):
         h = h[0] if h else None
     return OS(h.get('off_cd')) if isinstance(h, dict) else None
 
+
 def EXS(r, t, s):
     z, ts = P1(QC, t, {'regnNo': r, 'stateCode': s})
     if z is None or z.status_code != 200:
@@ -226,6 +248,7 @@ def EXS(r, t, s):
         return 1
     m = d.get('apiMessage') if isinstance(d, dict) else None
     return isinstance(m, dict) and m.get('statusCode') == 200
+
 
 def F(r, full=0):
     r = N(r)
@@ -298,11 +321,13 @@ def F(r, full=0):
             return bx[0]
     return bx[0] if bx else None
 
+
 def mob(d):
     if d and isinstance(d.get('data'), dict):
         m = d['data'].get('mobileNo')
         if m not in (None, ''):
             return m
+
 
 def SR(st, n):
     m = re.search(r'^(.*?)(\d+)$', st)
@@ -312,9 +337,11 @@ def SR(st, n):
     w, s0 = len(num), int(num)
     return [f'{p}{str(s0 + i).zfill(w)}' for i in range(n)]
 
+
 def clr():
     sys.stderr.write('\r\033[K')
     sys.stderr.flush()
+
 
 def B(st, n, th=20):
     rs = SR(N(st), n)
@@ -387,6 +414,7 @@ def B(st, n, th=20):
             pass
     os._exit(0)
 
+
 _stats = {
     'total': 0,
     'found': 0,
@@ -394,6 +422,7 @@ _stats = {
     'ips': {},
     'dates': {}
 }
+
 
 def run_api():
     SS()
@@ -449,13 +478,14 @@ def run_api():
 
     app.run(host='0.0.0.0', port=6958, debug=False, use_reloader=False)
 
-# ============ TELEGRAM BOT ============
+
 def tg_call(method, **params):
     try:
         r = requests.post(f"{TG_API}/{method}", json=params, timeout=TG_REQUEST_TIMEOUT)
         return r.json()
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
 
 def tg_get_updates(offset=None, timeout=TG_POLL_TIMEOUT):
     params = {"timeout": timeout, "allowed_updates": ["message", "edited_message"]}
@@ -467,6 +497,7 @@ def tg_get_updates(offset=None, timeout=TG_POLL_TIMEOUT):
     except Exception as e:
         return {"ok": False, "result": [], "error": str(e)}
 
+
 def tg_send(chat_id, text, reply_to=None):
     if len(text) > TG_MAX_MSG_LEN:
         text = text[:TG_MAX_MSG_LEN - 20] + "\n...[truncated]"
@@ -474,6 +505,7 @@ def tg_send(chat_id, text, reply_to=None):
     if reply_to:
         params["reply_to_message_id"] = reply_to
     return tg_call("sendMessage", **params)
+
 
 def tg_typing(chat_id):
     try:
@@ -485,6 +517,7 @@ def tg_typing(chat_id):
     except Exception:
         pass
 
+
 def tg_delete_webhook():
     try:
         r = requests.post(f"{TG_API}/deleteWebhook",
@@ -493,6 +526,7 @@ def tg_delete_webhook():
         return r.json()
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
 
 def fmt_result(vehicle, data):
     if not data:
@@ -523,14 +557,13 @@ def fmt_result(vehicle, data):
             lines.append(f"🚗 {model}")
     return "\n".join(lines)
 
+
 def tg_run_bot():
     print("🤖 Telegram bot starting...", flush=True)
 
-    # Clear any stale webhook so getUpdates works
     wh = tg_delete_webhook()
     print(f"🔗 Webhook: {wh.get('description') or wh}", flush=True)
 
-    # Verify bot identity
     me = tg_call("getMe")
     if me.get("ok"):
         uname = me["result"].get("username", "bot")
@@ -538,7 +571,6 @@ def tg_run_bot():
     else:
         print(f"❌ getMe failed: {me}", flush=True)
 
-    # Warm up Napix session (non-fatal)
     SS()
     GX(40)
     print("⏳ Warming Napix token (non-fatal)...", end=' ', flush=True)
@@ -642,7 +674,6 @@ def tg_run_bot():
             print(f"⚠️ Poll loop error: {e}", flush=True)
             time.sleep(2)
 
-# ===========================================
 
 if __name__ == "__main__":
     a = sys.argv
